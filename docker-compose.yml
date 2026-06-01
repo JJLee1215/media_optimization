@@ -6,3 +6,23 @@ services:
     volumes:
       - .:/app
     command: tail -f /dev/null
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/app
+    working_dir: /app
+    ports:
+      - "8000:8000"
+    command: uvicorn app:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    image: node:24-slim
+    volumes:
+      - ./frontend:/app
+    working_dir: /app
+    ports:
+      - "5173:5173"
+    command: sh -c "npm install && npm run dev -- --host"
