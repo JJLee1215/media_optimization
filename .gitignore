@@ -4,7 +4,7 @@ data_file/
 outputs/
 
 # 모델 저장파일
-models/
+results_models/
 *.pt
 *.pth
 *.pkl
