@@ -1,5 +1,6 @@
 cat > ~/media_opt/.gitignore << 'EOF'
 # 데이터 (용량 크고 민감)
+prev/
 data_file/
 outputs/
 
