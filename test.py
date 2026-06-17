@@ -1,42 +1,51 @@
 """
 test.py
-학습된 모델 로드 후 테스트 실행
+Model testing entry point
 
-사용법:
-  python test.py --model gp
-  python test.py --model gnn
-  python test.py --model all       ← 전체 테스트 + 비교
-  python test.py --model all --syn ← 더미 데이터로 전체 테스트
+Usage:
+  python test.py --model all           test all trained models
+  python test.py --model static        GP, RandomForest, XGBoost, MLP
+  python test.py --model time          RNN, LSTM, Transformer
+  python test.py --model static_time   StaticTimeGNN
+  python test.py --model gp            single model
 """
 
 import sys
 import os
 import argparse
 import json
+import torch
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from config import Config
+import config
+from data_preprocess import get_static_data, get_timeseries_data
+from compare import collect_results, print_table, plot_comparison
 
-cfg = Config()
+STATIC_MODELS      = ["gaussian_process", "random_forest", "xgboost", "mlp"]
+TIME_MODELS        = ["rnn", "lstm", "transformer"]
+STATIC_TIME_MODELS = ["static_time_gnn"]
+ALL_MODELS         = STATIC_MODELS + TIME_MODELS + STATIC_TIME_MODELS
 
-STATIC_MODELS     = ["gp", "xgboost", "random_forest", "mlp"]
-TIMESERIES_MODELS = ["rnn", "lstm", "transformer"]
-GNN_MODELS        = ["gnn"]
-ALL_MODELS        = STATIC_MODELS + TIMESERIES_MODELS + GNN_MODELS
+MODEL_GROUPS = {
+    "static"      : STATIC_MODELS,
+    "time"        : TIME_MODELS,
+    "static_time" : STATIC_TIME_MODELS,
+    "all"         : ALL_MODELS,
+}
 
 
 def get_model(model_name):
-    if model_name == "gp":
-        from Models.gp import GPModel
-        return GPModel()
-    elif model_name == "xgboost":
-        from Models.xgboost import XGBoostModel
-        return XGBoostModel()
+    if model_name == "gaussian_process":
+        from Models.gaussian_process import GaussianProcessModel
+        return GaussianProcessModel()
     elif model_name == "random_forest":
         from Models.randomforest import RandomForestModel
         return RandomForestModel()
+    elif model_name == "xgboost":
+        from Models.xgboost_model import XGBoostModel
+        return XGBoostModel()
     elif model_name == "mlp":
         from Models.mlp import MLPModel
         return MLPModel()
@@ -49,103 +58,150 @@ def get_model(model_name):
     elif model_name == "transformer":
         from Models.transformer import TransformerModel
         return TransformerModel()
-    elif model_name == "gnn":
-        from Models.gnn import GNNModel
-        return GNNModel()
     else:
-        raise ValueError(f"지원하지 않는 모델: {model_name}")
+        raise ValueError(f"Unknown model: {model_name}")
 
 
-def test_model(model_name: str, use_syn: bool = False):
-    from data import get_static_data, get_timeseries_data, get_gnn_data
-
-    save_path = cfg.model_save_path(model_name)
+def test_static(model_name):
+    save_path = config.model_save_path(model_name)
     if not save_path.exists():
-        raise FileNotFoundError(
-            f"학습된 모델 없음: {save_path}\n"
-            f"먼저 python train.py --model {model_name} 실행"
-        )
+        raise FileNotFoundError(f"No trained model: {save_path}\nRun: python train.py --model {model_name}")
 
-    print(f"\n{'='*55}")
-    print(f"  테스트: {model_name.upper()}  |  데이터: {'더미' if use_syn else '실제'}")
-    print(f"{'='*55}")
-
+    _, X_test, _, y_test, x_cols, _ = get_static_data()
     model = get_model(model_name)
     model.load()
+    return model.evaluate(X_test, y_test)
 
-    if model_name in STATIC_MODELS:
-        X_train, X_test, y_train, y_test, x_cols, scaler = get_static_data(use_syn=use_syn)
-        result = model.evaluate(X_test, y_test)
 
-    elif model_name in TIMESERIES_MODELS:
-        loaders, x_scaler, y_scaler, X_test, y_test = get_timeseries_data(use_syn=use_syn)
-        result = model.evaluate(X_test, y_test)
+def test_time(model_name):
+    save_path = config.model_save_path(model_name)
+    if not save_path.exists():
+        raise FileNotFoundError(f"No trained model: {save_path}\nRun: python train.py --model {model_name}")
 
-    elif model_name in GNN_MODELS:
-        train_loader, val_loader = get_gnn_data(use_syn=use_syn)
-        result = model.evaluate(train_loader, val_loader)
+    _, _, _, X_test, y_test, _ = get_timeseries_data()
+    model = get_model(model_name)
+    model.load()
+    return model.evaluate(X_test, y_test)
 
-    result_path = cfg.result_dir(model_name) / "test_result.json"
-    cfg.result_dir(model_name).mkdir(parents=True, exist_ok=True)
+
+def test_static_time():
+    from torch.utils.data import Dataset, DataLoader, random_split
+    from Models.StaticTimeGNN import StaticTimeGNNModel
+
+    save_path = config.model_save_path("static_time_gnn")
+    if not save_path.exists():
+        raise FileNotFoundError(f"No trained model: {save_path}\nRun: python train.py --model static_time")
+
+    # Reuse same data loading as train
+    import pandas as pd
+    import numpy as np
+
+    df_static  = pd.read_csv(config.DATA_STATIC)
+    df_dynamic = pd.read_csv(config.DATA_TIMESERIES)
+
+    drop_cols   = ["batch_id", "titer_final", "viab_final"]
+    static_cols = [c for c in df_static.columns if c not in drop_cols]
+
+    m_static = torch.tensor(df_static[static_cols].values, dtype=torch.float32)
+    y_titer  = torch.tensor(df_static["titer_final"].values, dtype=torch.float32)
+    y_viab   = torch.tensor(df_static["viab_final"].values,  dtype=torch.float32)
+
+    batch_col  = "Batch ID"
+    time_col   = "Time (day)"
+    target_col = "Titer (g/L)"
+    skip_cols  = [batch_col, time_col, "Fault flag", target_col]
+    feat_cols  = [c for c in df_dynamic.columns if c not in skip_cols]
+
+    X_list = []
+    for _, grp in df_dynamic.groupby(batch_col):
+        grp = grp.sort_values(time_col)
+        X_list.append(grp[feat_cols].values)
+
+    T = min(len(x) for x in X_list)
+    X_dynamic = torch.tensor(np.array([x[:T] for x in X_list], dtype=np.float32))
+
+    class GNNDataset(Dataset):
+        def __init__(self, m, X, yt, yv):
+            self.m, self.X, self.yt, self.yv = m, X, yt, yv
+        def __len__(self): return len(self.m)
+        def __getitem__(self, i): return self.m[i], self.X[i], self.yt[i], self.yv[i]
+
+    dataset = GNNDataset(m_static, X_dynamic, y_titer, y_viab)
+    n_train = int(len(dataset) * config.TRAIN_RATIO)
+    n_val   = len(dataset) - n_train
+    train_set, val_set = random_split(
+        dataset, [n_train, n_val],
+        generator=torch.Generator().manual_seed(config.RANDOM_SEED)
+    )
+    train_loader = DataLoader(train_set, batch_size=config.GNN_BATCH_SIZE)
+    val_loader   = DataLoader(val_set,   batch_size=config.GNN_BATCH_SIZE)
+
+    N  = len(feat_cols)
+    A0 = torch.zeros(N, N)
+
+    model = StaticTimeGNNModel(
+        d_static  = m_static.shape[1],
+        d_dynamic = X_dynamic.shape[2],
+        N         = N,
+        A0        = A0,
+    )
+    model.load()
+    return model.evaluate(train_loader, val_loader)
+
+
+def test_model(model_name):
+    config.make_dirs()
+    print(f"\n{'='*55}")
+    print(f"  Testing: {model_name.upper()}")
+    print(f"{'='*55}")
+
+    try:
+        if model_name in STATIC_MODELS:
+            result = test_static(model_name)
+        elif model_name in TIME_MODELS:
+            result = test_time(model_name)
+        elif model_name == "static_time_gnn":
+            result = test_static_time()
+        else:
+            raise ValueError(f"Unknown model: {model_name}")
+    except FileNotFoundError as e:
+        print(f"[SKIP] {e}")
+        return None
+
+    # Save result JSON
+    result_path = config.result_dir(model_name) / "test_result.json"
+    result_path.parent.mkdir(parents=True, exist_ok=True)
     with open(result_path, "w") as f:
         json.dump(result, f, indent=2)
-    print(f"결과 저장: {result_path}")
-
+    print(f"Result saved: {result_path}")
     return result
 
 
-def test_all(use_syn: bool = False):
-    results = {}
+def test_group(group: str):
+    models = MODEL_GROUPS[group]
 
-    for model_name in ALL_MODELS:
+    for name in models:
         try:
-            result = test_model(model_name, use_syn=use_syn)
-            results[model_name] = result
-        except FileNotFoundError as e:
-            print(f"\n[{model_name}] 스킵: 모델 파일 없음")
-            results[model_name] = {"skipped": "모델 파일 없음"}
+            test_model(name)
         except Exception as e:
-            print(f"\n[{model_name}] 오류: {e}")
-            results[model_name] = {"error": str(e)}
+            print(f"\n[{name}] Error: {e}")
 
-    print(f"\n{'='*55}")
-    print("  전체 모델 테스트 결과 비교")
-    print(f"{'='*55}")
-    print(f"  {'모델':<15} {'RMSE':>10}  {'R²':>8}")
-    print(f"  {'-'*38}")
-
-    ranked = []
-    for name, r in results.items():
-        if "rmse" in r:
-            ranked.append((name, r["rmse"], r.get("r2", "-")))
-        elif "titer_rmse" in r:
-            ranked.append((name, r["titer_rmse"], "-"))
-    ranked.sort(key=lambda x: x[1])
-
-    for name, rmse, r2 in ranked:
-        print(f"  {name:<15} {rmse:>10.4f}  {r2!s:>8}")
-    for name, r in results.items():
-        if "skipped" in r:
-            print(f"  {name:<15}  (미학습)")
-        elif "error" in r:
-            print(f"  {name:<15}  오류")
-
-    all_result_path = cfg.RESULTS_TT_DIR / "all_test_results.json"
-    cfg.RESULTS_TT_DIR.mkdir(parents=True, exist_ok=True)
-    with open(all_result_path, "w") as f:
-        json.dump(results, f, indent=2)
-    print(f"\n전체 결과 저장: {all_result_path}")
+    # Compare
+    all_results = collect_results("test")
+    print_table(all_results, "test")
+    plot_comparison(all_results, "test")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="모델 테스트")
-    parser.add_argument("--model", type=str, required=True,
-                        choices=ALL_MODELS + ["all"])
-    parser.add_argument("--syn", action="store_true",
-                        help="더미 데이터 사용")
+    parser = argparse.ArgumentParser(description="Model Testing")
+    parser.add_argument(
+        "--model", type=str, required=True,
+        choices=list(MODEL_GROUPS.keys()) + ALL_MODELS,
+        help="Model or group to test"
+    )
     args = parser.parse_args()
 
-    if args.model == "all":
-        test_all(use_syn=args.syn)
+    if args.model in MODEL_GROUPS:
+        test_group(args.model)
     else:
-        test_model(args.model, use_syn=args.syn)
+        test_model(args.model)

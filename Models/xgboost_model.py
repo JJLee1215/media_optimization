@@ -1,6 +1,6 @@
 """
-Models/randomforest.py
-Random Forest Regression
+Models/xgboost_model.py
+XGBoost Regression
 
 Input:
   X_train : (n_train, 9)   initial media composition (scaled)
@@ -15,7 +15,7 @@ Target:
   y_train : (n_train,)   titer_final
   y_test  : (n_test,)
 
-Source: batch_table_syn.csv  via preprocess.get_static_data()
+Source: batch_table_syn.csv  via data_preprocess.get_static_data()
 
 Methods:
   train()              fit model
@@ -31,46 +31,46 @@ import pickle
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from sklearn.ensemble import RandomForestRegressor
+from pathlib import Path
+from xgboost import XGBRegressor
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.model_selection import cross_val_score
-
 import sys
-from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import config
 
-MODEL_NAME = "random_forest"
+MODEL_NAME = "xgboost"
 SAVE_PATH  = config.model_save_path(MODEL_NAME)
 RESULT_DIR = config.result_dir(MODEL_NAME)
 
 
-class RandomForestModel:
+class XGBoostModel:
     def __init__(self):
-        self.model  = RandomForestRegressor(
-            n_estimators=config.RF_N_ESTIMATORS,
+        self.model  = XGBRegressor(
+            n_estimators=config.XGB_N_ESTIMATORS,
             random_state=config.RANDOM_SEED,
-            n_jobs=-1
+            verbosity=0,
+            n_jobs=-1,
         )
-        self.scaler  = None
-        self.x_cols  = None
+        self.scaler = None
+        self.x_cols = None
 
     def train(self, X_train, y_train, x_cols=None, scaler=None):
         """
-        X_train : (n_samples, n_features)  already scaled
-        y_train : (n_samples,)
+        X_train : (n_train, 9)  already scaled
+        y_train : (n_train,)
         x_cols  : feature names (for importance plot)
-        scaler  : fitted scaler (saved for inference)
+        scaler  : fitted StandardScaler (saved for inference)
         """
         self.scaler = scaler
         self.x_cols = x_cols
-        print(f"[RandomForest] Training...  n_train={len(X_train)}  n_features={X_train.shape[1]}")
+        print(f"[XGBoost] Training...  n_train={len(X_train)}  n_features={X_train.shape[1]}")
         self.model.fit(X_train, y_train)
-        print("[RandomForest] Training complete.")
+        print("[XGBoost] Training complete.")
 
     def predict(self, X):
-        """Returns (y_pred, None) — None for API consistency with GP (which returns std)."""
+        """Returns (y_pred, None) — None for API consistency with GP."""
         return self.model.predict(X), None
 
     def evaluate(self, X_test, y_test):
@@ -78,50 +78,51 @@ class RandomForestModel:
         y_pred, _ = self.predict(X_test)
         rmse = np.sqrt(mean_squared_error(y_test, y_pred))
         r2   = r2_score(y_test, y_pred)
-        print(f"[RandomForest] RMSE: {rmse:.4f}  R²: {r2:.4f}")
+        print(f"[XGBoost] RMSE: {rmse:.4f}  R²: {r2:.4f}")
 
         RESULT_DIR.mkdir(parents=True, exist_ok=True)
         fig, axes = plt.subplots(1, 2, figsize=(11, 4))
 
         # Predicted vs Actual
-        axes[0].scatter(y_test, y_pred, alpha=0.6, s=30, color="#9FE1CB")
+        axes[0].scatter(y_test, y_pred, alpha=0.6, s=30, color="#1D9E75")
         lims = [min(y_test.min(), y_pred.min()) - 0.2,
                 max(y_test.max(), y_pred.max()) + 0.2]
         axes[0].plot(lims, lims, "r--", lw=1)
         axes[0].set_xlabel("Actual")
         axes[0].set_ylabel("Predicted")
-        axes[0].set_title(f"Random Forest  (R²={r2:.3f}  RMSE={rmse:.3f})")
+        axes[0].set_title(f"XGBoost  (R²={r2:.3f}  RMSE={rmse:.3f})")
         axes[0].grid(True, alpha=0.3)
 
         # Residuals
-        axes[1].hist(y_pred - y_test, bins=15, edgecolor="white", color="#9FE1CB")
+        axes[1].hist(y_pred - y_test, bins=15, edgecolor="white", color="#534AB7")
         axes[1].axvline(0, color="red", lw=1, ls="--")
         axes[1].set_title("Residuals")
         axes[1].set_xlabel("Predicted - Actual")
+        axes[1].grid(True, alpha=0.3)
 
         plt.tight_layout()
         plt.savefig(RESULT_DIR / "eval.png", dpi=120)
         plt.close()
-        print(f"[RandomForest] Plot saved: {RESULT_DIR}/eval.png")
+        print(f"[XGBoost] Plot saved: {RESULT_DIR}/eval.png")
 
         return {
-            "model" : MODEL_NAME,
-            "rmse"  : round(float(rmse), 4),
-            "r2"    : round(float(r2), 4),
+            "model": MODEL_NAME,
+            "rmse" : round(float(rmse), 4),
+            "r2"   : round(float(r2),   4),
         }
 
     def feature_importance(self, x_cols=None):
         """Save feature importance bar chart."""
         cols = x_cols or self.x_cols
         if cols is None:
-            print("[RandomForest] x_cols not provided, skipping feature importance.")
+            print("[XGBoost] x_cols not provided, skipping feature importance.")
             return
 
         imp = self.model.feature_importances_
         idx = np.argsort(imp)
 
         fig, ax = plt.subplots(figsize=(6, 5))
-        ax.barh(range(len(idx)), imp[idx], color="#9FE1CB", edgecolor="white")
+        ax.barh(range(len(idx)), imp[idx], color="#1D9E75", edgecolor="white")
         ax.set_yticks(range(len(idx)))
         ax.set_yticklabels([cols[i] for i in idx], fontsize=8)
         ax.set_title("Feature Importance")
@@ -129,19 +130,19 @@ class RandomForestModel:
         plt.tight_layout()
         plt.savefig(RESULT_DIR / "feature_importance.png", dpi=120)
         plt.close()
-        print(f"[RandomForest] Feature importance saved: {RESULT_DIR}/feature_importance.png")
+        print(f"[XGBoost] Feature importance saved: {RESULT_DIR}/feature_importance.png")
 
     def cross_validate(self, X, y, cv=5):
         """k-fold cross validation."""
         scores = cross_val_score(
-            RandomForestRegressor(
-                n_estimators=config.RF_N_ESTIMATORS,
+            XGBRegressor(
+                n_estimators=config.XGB_N_ESTIMATORS,
                 random_state=config.RANDOM_SEED,
-                n_jobs=-1
+                verbosity=0, n_jobs=-1,
             ),
             X, y, cv=cv, scoring="r2", n_jobs=-1
         )
-        print(f"[RandomForest] CV R²: {np.round(scores, 3)}"
+        print(f"[XGBoost] CV R²: {np.round(scores, 3)}"
               f"  mean={scores.mean():.3f} ± {scores.std():.3f}")
         return scores
 
@@ -153,7 +154,7 @@ class RandomForestModel:
                 "scaler" : self.scaler,
                 "x_cols" : self.x_cols,
             }, f)
-        print(f"[RandomForest] Saved: {SAVE_PATH}")
+        print(f"[XGBoost] Saved: {SAVE_PATH}")
 
     def load(self):
         with open(SAVE_PATH, "rb") as f:
@@ -161,13 +162,14 @@ class RandomForestModel:
         self.model  = data["model"]
         self.scaler = data["scaler"]
         self.x_cols = data["x_cols"]
-        print(f"[RandomForest] Loaded: {SAVE_PATH}")
+        print(f"[XGBoost] Loaded: {SAVE_PATH}")
 
 
 if __name__ == "__main__":
     from data_preprocess import get_static_data
     X_train, X_test, y_train, y_test, x_cols, scaler = get_static_data()
-    model = RandomForestModel()
+
+    model = XGBoostModel()
     model.train(X_train, y_train, x_cols=x_cols, scaler=scaler)
     model.evaluate(X_test, y_test)
     model.feature_importance()

@@ -10,6 +10,10 @@ results_models/
 *.pth
 *.pkl
 
+results_train_test/
+*.json
+*.png
+
 # Python
 __pycache__/
 *.pyc

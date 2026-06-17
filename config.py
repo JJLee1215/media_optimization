@@ -100,7 +100,7 @@ def make_dirs():
     """Create all output directories."""
     dirs = [
         RESULTS_MODELS_DIR,
-        RESULTS_TT_DIR / "gp",
+        RESULTS_TT_DIR / "gaussian_process",
         RESULTS_TT_DIR / "xgboost",
         RESULTS_TT_DIR / "random_forest",
         RESULTS_TT_DIR / "mlp",
