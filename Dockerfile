@@ -8,5 +8,5 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 
-RUN pip3 install numpy pandas scikit-learn matplotlib seaborn jupyterlab xgboost \
-    fastapi uvicorn[standard]
+COPY requirements.txt .
+RUN pip3 install -r requirements.txt

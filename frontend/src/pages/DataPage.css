@@ -1,0 +1,144 @@
+/* ── Data Page ─────────────────────────────── */
+.data-page {
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  
+}
+
+.data-layout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  gap: 0;
+  min-height: 0;
+}
+
+.panel-wrap {
+  flex: 1;
+  overflow-y: auto;
+  height: 100%;
+  padding: 0 0.5rem;
+  min-width: 0;
+}
+
+/* ── react-split gutter ─────────────────────── */
+.data-layout > .gutter {
+  background: #e0e0e0;
+  cursor: col-resize;
+  flex-shrink: 0;
+  transition: background 0.15s;
+  position: relative;
+}
+
+.data-layout > .gutter:hover { background: #1D9E75; }
+
+.data-layout > .gutter::after {
+  content: "⋮";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #aaa;
+  font-size: 14px;
+  pointer-events: none;
+}
+
+.data-layout > .gutter:hover::after { color: #fff; }
+
+/* ── Panel ──────────────────────────────────── */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-bottom: 2rem;
+}
+
+.panel-header {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1a1f2e;
+  padding: 0.5rem 0;
+  border-bottom: 2px solid #1D9E75;
+  position: sticky;
+  top: 0;
+  background: #f5f6fa;
+  z-index: 10;
+}
+
+/* ── File badge ─────────────────────────────── */
+.file-badge {
+  margin-top: 0.4rem;
+  display: inline-block;
+  background: #f0faf6;
+  color: #1D9E75;
+  border: 1px solid #b2dfdb;
+  border-radius: 20px;
+  padding: 0.2rem 0.75rem;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* ── Card header row ────────────────────────── */
+.card-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.6rem;
+}
+
+.card-header-row h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+  margin: 0;
+}
+
+/* ── Small buttons ──────────────────────────── */
+.btn-sm {
+  padding: 0.2rem 0.6rem;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: #f8f9fa;
+  color: #555;
+  cursor: pointer;
+}
+.btn-sm:hover { background: #eee; }
+
+/* ── Checkbox grid ──────────────────────────── */
+.checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 0.3rem;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+  font-size: 11.5px;
+  color: #444;
+  padding: 0.2rem 0.3rem;
+  border-radius: 4px;
+  transition: background 0.1s;
+}
+.checkbox-item:hover { background: #f5f5f5; }
+
+.checkbox-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.checkbox-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -16,6 +16,8 @@ services:
     working_dir: /app
     ports:
       - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
     command: uvicorn app:app --host 0.0.0.0 --port 8000 --reload
 
   frontend:
