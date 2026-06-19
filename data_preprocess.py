@@ -37,7 +37,7 @@ def get_static_data():
     """
     df = pd.read_csv(config.DATA_STATIC)
 
-    drop_cols = ["batch_id", "titer_final", "viab_final"]
+    drop_cols = ["Batch_ID", "titer_final", "viab_final"]
     x_cols = [c for c in df.columns if c not in drop_cols]
 
     X = df[x_cols].values.astype(np.float32)
@@ -90,7 +90,7 @@ def get_timeseries_data(batch_size=None):
     if "Fault flag" in df.columns:
         df = df[df["Fault flag"] == 0]
 
-    batch_col  = "Batch ID"
+    batch_col  = "Batch_ID"
     time_col   = "Time (day)"
     target_col = "Titer (g/L)"
 

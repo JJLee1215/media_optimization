@@ -1,22 +1,31 @@
-import Split from "react-split";
+import { useState } from "react";
 import StaticPanel from "../components/Staticpanel";
 import TimePanel   from "../components/Timepanel";
 import "./DataPage.css";
 
 export default function DataPage() {
+  const [activeTab, setActiveTab] = useState("static");
+
   return (
     <div className="data-page">
-      <h1 className="page-title">Data Analysis</h1>
-      <Split
-        className="data-layout"
-        sizes={[50, 50]}
-        minSize={280}
-        gutterSize={8}
-        direction="horizontal"
-      >
-        <div className="panel-wrap"><StaticPanel /></div>
-        <div className="panel-wrap"><TimePanel /></div>
-      </Split>
+      <div className="tab-bar">
+        <button
+          className={`tab ${activeTab === "static" ? "active" : ""}`}
+          onClick={() => setActiveTab("static")}
+        >
+          📊 Static Data
+        </button>
+        <button
+          className={`tab ${activeTab === "ts" ? "active" : ""}`}
+          onClick={() => setActiveTab("ts")}
+        >
+          📈 Time Series Data
+        </button>
+      </div>
+
+      <div className="panel-wrap">
+        {activeTab === "static" ? <StaticPanel /> : <TimePanel />}
+      </div>
     </div>
   );
 }

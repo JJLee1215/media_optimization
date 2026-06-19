@@ -4,48 +4,39 @@
   height: 100vh;
   display: flex;
   flex-direction: column;
-  
 }
 
-.data-layout {
+/* ── Tab bar ────────────────────────────────── */
+.tab-bar {
   display: flex;
-  flex: 1;
-  overflow: hidden;
-  gap: 0;
-  min-height: 0;
+  border-bottom: 2px solid #e0e0e0;
+  padding: 0.5rem 0 0 0;
+  flex-shrink: 0;
 }
 
+.tab {
+  padding: 0.55rem 1.25rem;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #888;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.tab:hover { color: #1D9E75; }
+.tab.active { color: #1D9E75; border-bottom-color: #1D9E75; }
+
+/* ── Panel wrap ─────────────────────────────── */
 .panel-wrap {
   flex: 1;
   overflow-y: auto;
-  height: 100%;
-  padding: 0 0.5rem;
+  padding: 1rem 1.5rem;
   min-width: 0;
 }
-
-/* ── react-split gutter ─────────────────────── */
-.data-layout > .gutter {
-  background: #e0e0e0;
-  cursor: col-resize;
-  flex-shrink: 0;
-  transition: background 0.15s;
-  position: relative;
-}
-
-.data-layout > .gutter:hover { background: #1D9E75; }
-
-.data-layout > .gutter::after {
-  content: "⋮";
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  color: #aaa;
-  font-size: 14px;
-  pointer-events: none;
-}
-
-.data-layout > .gutter:hover::after { color: #fff; }
 
 /* ── Panel ──────────────────────────────────── */
 .panel {
@@ -53,18 +44,6 @@
   flex-direction: column;
   gap: 0.75rem;
   padding-bottom: 2rem;
-}
-
-.panel-header {
-  font-size: 15px;
-  font-weight: 700;
-  color: #1a1f2e;
-  padding: 0.5rem 0;
-  border-bottom: 2px solid #1D9E75;
-  position: sticky;
-  top: 0;
-  background: #f5f6fa;
-  z-index: 10;
 }
 
 /* ── File badge ─────────────────────────────── */
@@ -142,3 +121,84 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ── Upload bar ─────────────────────────────── */
+.upload-bar {
+  display: flex;
+  gap: 0;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.upload-bar-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.75rem 1rem;
+  border-right: 1px solid #f0f0f0;
+}
+
+.upload-bar-item:last-child {
+  border-right: none;
+}
+
+.upload-bar-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.upload-bar-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a1f2e;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.upload-btn-wrap {
+  flex: 1.5;
+}
+
+.upload-spinner {
+  font-size: 12px;
+}
+
+/* ── File upload custom button ── */
+.file-upload-btn {
+  display: inline-block;
+  padding: 0.3rem 0.75rem;
+  font-size: 12px;
+  font-weight: 600;
+  background: #f0f0f0;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #555;
+  transition: background 0.15s;
+}
+.file-upload-btn:hover { background: #e0e0e0; }
+
+.file-uploaded-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.file-clear-btn {
+  background: none;
+  border: none;
+  color: #aaa;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+}
+.file-clear-btn:hover { color: #E24B4A; }

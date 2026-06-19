@@ -1,0 +1,218 @@
+.train-page {
+  padding: 1rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* ── 상단 바 ── */
+.train-bar-top {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+
+.train-bar-item {
+  flex: 1;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  padding: 0.65rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.train-bar-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.train-bar-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1a1f2e;
+}
+
+.train-bar-select {
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1a1f2e;
+  cursor: pointer;
+  outline: none;
+}
+
+.train-run-btn {
+  background: #1D9E75;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 0.5rem 1.25rem;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.train-run-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── 섹션 ── */
+.model-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid #1D9E75;
+}
+
+.section-header.ts { border-bottom-color: #534AB7; }
+.section-header.st { border-bottom-color: #E24B4A; }
+
+.section-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1a1f2e;
+}
+
+.section-badge {
+  font-size: 11px;
+  border-radius: 10px;
+  padding: 2px 10px;
+  font-weight: 600;
+}
+
+.section-badge.static {
+  background: #f0faf6;
+  color: #1D9E75;
+  border: 1px solid #b2dfdb;
+}
+
+.section-badge.ts {
+  background: #eeedfe;
+  color: #534AB7;
+  border: 1px solid #afa9ec;
+}
+
+.section-badge.st {
+  background: #fcebeb;
+  color: #E24B4A;
+  border: 1px solid #f09595;
+}
+
+/* ── 경고 노트 ── */
+.st-note {
+  display: inline-block;
+  font-size: 11px;
+  color: #b8860b;
+  background: #fff8e1;
+  border: 1px solid #ffe082;
+  border-radius: 8px;
+  padding: 0.25rem 0.6rem;
+}
+
+/* ── 모델 그리드 ── */
+.model-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.6rem;
+}
+
+/* ── 모델 카드 ── */
+.model-card {
+  background: #fff;
+  border: 1.5px solid #ddd;
+  border-radius: 12px;
+  padding: 1rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  position: relative;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.model-card:hover { border-color: #aaa; }
+
+.model-card.selected.static { border-color: #1D9E75; background: #f0faf6; }
+.model-card.selected.ts     { border-color: #534AB7; background: #eeedfe; }
+.model-card.selected.st     { border-color: #E24B4A; background: #fcebeb; }
+
+.model-check         { position: absolute; top: 6px; right: 10px; font-size: 13px; font-weight: 700; }
+.model-check.static  { color: #1D9E75; }
+.model-check.ts      { color: #534AB7; }
+.model-check.st      { color: #E24B4A; }
+
+.model-icon  { font-size: 24px; }
+.model-name  { font-size: 13px; font-weight: 700; color: #1a1f2e; }
+.model-desc  { font-size: 10px; color: #888; text-align: center; }
+
+.model-badge {
+  font-size: 9px;
+  border-radius: 10px;
+  padding: 2px 8px;
+  font-weight: 600;
+}
+
+.model-badge.saved { background: #1a1f2e; color: #1D9E75; }
+.model-badge.none  { color: #ccc; }
+
+.model-r2 { font-size: 10px; color: #1D9E75; font-weight: 600; }
+
+/* ── 결과 테이블 ── */
+.best-row { background: #f0faf6; }
+
+.best-badge {
+  font-size: 9px;
+  background: #1D9E75;
+  color: #fff;
+  border-radius: 10px;
+  padding: 1px 7px;
+  font-weight: 600;
+}
+
+/* ── File upload custom button ── */
+.file-upload-btn {
+  display: inline-block;
+  padding: 0.3rem 0.75rem;
+  font-size: 12px;
+  font-weight: 600;
+  background: #f0f0f0;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #555;
+  transition: background 0.15s;
+}
+.file-upload-btn:hover { background: #e0e0e0; }
+
+.file-uploaded-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.file-clear-btn {
+  background: none;
+  border: none;
+  color: #aaa;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+}
+.file-clear-btn:hover { color: #E24B4A; }

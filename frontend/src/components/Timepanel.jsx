@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import axios from "axios";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -14,7 +14,6 @@ const COLORS = [
 ];
 
 export default function TimePanel() {
-  const [file,           setFile]           = useState(null);
   const [filename,       setFilename]       = useState("");
   const [uploading,      setUploading]      = useState(false);
   const [columns,        setColumns]        = useState([]);
@@ -26,15 +25,18 @@ export default function TimePanel() {
   const [analyzing,      setAnalyzing]      = useState(false);
   const [analysisResult, setAnalysisResult] = useState(null);
   const [error,          setError]          = useState("");
+  const fileInputRef = useRef(null);
 
-  // ── Upload ──────────────────────────────────────
-  const handleUpload = async () => {
-    if (!file) return;
+  const handleFileChange = async (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
     setUploading(true);
     setError("");
+    setAnalysisResult(null);
+    setColumns([]);
     try {
       const form = new FormData();
-      form.append("file", file);
+      form.append("file", f);
       const { data: up } = await axios.post(`${API}/data/upload`, form);
       const fname = up.filename;
       setFilename(fname);
@@ -55,13 +57,38 @@ export default function TimePanel() {
     }
   };
 
+  const handleClearFile = () => {
+    setFilename("");
+    setColumns([]);
+    setSelectedCols([]);
+    setBatchIds([]);
+    setSelectedBatch("all");
+    setRawData({});
+    setTimeCol("");
+    setAnalysisResult(null);
+    setError("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleAnalyze = async () => {
+    if (!filename) return;
+    setAnalyzing(true);
+    try {
+      const { data } = await axios.post(`${API}/data/analyze`, { filename });
+      setAnalysisResult(data);
+    } catch (e) {
+      setError("Analysis failed.");
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
   const toggleCol   = (col) => setSelectedCols(prev =>
     prev.includes(col) ? prev.filter(c => c !== col) : [...prev, col]
   );
   const selectAll   = () => setSelectedCols([...columns]);
   const deselectAll = () => setSelectedCols([]);
 
-  // ── Build chart data ──────────────────────────
   const buildChartData = () => {
     const batches = selectedBatch === "all"
       ? batchIds.slice(0, 5)
@@ -114,7 +141,6 @@ export default function TimePanel() {
 
   const { chartData, lines } = buildChartData();
 
-  // Y axis domain based on selected columns only
   const getYDomain = () => {
     if (!chartData.length || !selectedCols.length) return ["auto", "auto"];
     const selectedKeys = lines.filter(l => l.selected).map(l => l.key);
@@ -128,77 +154,107 @@ export default function TimePanel() {
     return [parseFloat((min - pad).toFixed(4)), parseFloat((max + pad).toFixed(4))];
   };
 
-  // ── Run Analysis ──────────────────────────────
-  const handleAnalyze = async () => {
-    if (!filename) return;
-    setAnalyzing(true);
-    try {
-      const { data } = await axios.post(`${API}/data/analyze`, { filename });
-      setAnalysisResult(data);
-    } catch (e) {
-      setError("Analysis failed.");
-    } finally {
-      setAnalyzing(false);
-    }
-  };
-
   return (
     <div className="panel">
-      <div className="panel-header">📈 Time Series Data</div>
 
-      {/* 1. Upload */}
-      <div className="card">
-        <div className="form-row">
-          <input type="file" accept=".csv" onChange={e => setFile(e.target.files[0])} />
-          <button className="btn btn-primary" onClick={handleUpload} disabled={!file || uploading}>
-            {uploading ? "Loading..." : "Upload"}
+      {/* ── 상단 가로 바 ── */}
+      <div className="upload-bar">
+        <div className="upload-bar-item upload-btn-wrap">
+          <span className="upload-bar-label">Upload</span>
+          {!filename ? (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv"
+                id="ts-file-input"
+                style={{ display: "none" }}
+                onChange={handleFileChange}
+                disabled={uploading}
+              />
+              <label htmlFor="ts-file-input" className="file-upload-btn">
+                {uploading ? "Uploading..." : "Choose file"}
+              </label>
+            </>
+          ) : (
+            <div className="file-uploaded-row">
+              <span className="upload-bar-value" style={{ fontSize: 12 }}>📄 {filename}</span>
+              <button className="file-clear-btn" onClick={handleClearFile}>✕</button>
+            </div>
+          )}
+        </div>
+        <div className="upload-bar-item">
+          <span className="upload-bar-label">Batches</span>
+          <span className="upload-bar-value">{batchIds.length || "—"}</span>
+        </div>
+        <div className="upload-bar-item">
+          <span className="upload-bar-label">Columns</span>
+          <span className="upload-bar-value">{columns.length || "—"}</span>
+        </div>
+        <div className="upload-bar-item">
+          <span className="upload-bar-label">Analysis</span>
+          <button
+            className="btn btn-primary"
+            onClick={handleAnalyze}
+            disabled={analyzing || !filename}
+            style={{ fontSize: 12, padding: "0.4rem 0.8rem" }}
+          >
+            {analyzing ? "⏳ Running..." : "▶ Run Analysis"}
           </button>
         </div>
-        {filename && <div className="file-badge">📄 {filename}</div>}
       </div>
 
       {error && <div className="status-bar status-error">❌ {error}</div>}
 
       {columns.length > 0 && (<>
 
-        {/* 2. Batch */}
+        {/* ── Batch + Variables ── */}
         <div className="card">
-          <h3 style={{ fontSize: 13, fontWeight: 600, marginBottom: "0.5rem" }}>Batch</h3>
-          <div className="form-group">
-            <select value={selectedBatch} onChange={e => setSelectedBatch(e.target.value)}>
-              <option value="all">All (first 5)</option>
-              {batchIds.map(bid => (
-                <option key={bid} value={bid}>Batch {bid}</option>
-              ))}
-            </select>
-          </div>
-        </div>
+          <div style={{ display: "flex", gap: "1rem", alignItems: "flex-start", flexWrap: "wrap" }}>
 
-        {/* 3. Variables */}
-        <div className="card">
-          <div className="card-header-row">
-            <h3>Variables</h3>
-            <div style={{ display: "flex", gap: "0.4rem" }}>
-              <button className="btn-sm" onClick={selectAll}>All</button>
-              <button className="btn-sm" onClick={deselectAll}>None</button>
+            <div style={{ minWidth: 160 }}>
+              <div className="card-header-row" style={{ marginBottom: "0.4rem" }}>
+                <h3>Batch</h3>
+              </div>
+              <select
+                value={selectedBatch}
+                onChange={e => setSelectedBatch(e.target.value)}
+                style={{ padding: "0.4rem 0.6rem", border: "1px solid #ddd", borderRadius: 8, fontSize: 13 }}
+              >
+                <option value="all">All (first 5)</option>
+                {batchIds.map(bid => (
+                  <option key={bid} value={String(bid)}>Batch {bid}</option>
+                ))}
+              </select>
             </div>
-          </div>
-          <div className="checkbox-grid">
-            {columns.map((col, i) => (
-              <label key={col} className="checkbox-item">
-                <input type="checkbox" checked={selectedCols.includes(col)} onChange={() => toggleCol(col)} />
-                <span className="checkbox-dot" style={{ background: COLORS[i % COLORS.length] }} />
-                <span className="checkbox-label">{col}</span>
-              </label>
-            ))}
+
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <div className="card-header-row">
+                <h3>Variables</h3>
+                <div style={{ display: "flex", gap: "0.4rem" }}>
+                  <button className="btn-sm" onClick={selectAll}>All</button>
+                  <button className="btn-sm" onClick={deselectAll}>None</button>
+                </div>
+              </div>
+              <div className="checkbox-grid">
+                {columns.map((col, i) => (
+                  <label key={col} className="checkbox-item">
+                    <input type="checkbox" checked={selectedCols.includes(col)} onChange={() => toggleCol(col)} />
+                    <span className="checkbox-dot" style={{ background: COLORS[i % COLORS.length] }} />
+                    <span className="checkbox-label">{col}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
           </div>
         </div>
 
-        {/* 4. Chart */}
+        {/* ── Time Series 차트 ── */}
         {chartData.length > 0 && (
           <div className="card">
             <h3 style={{ fontSize: 13, fontWeight: 600, marginBottom: "0.5rem" }}>Time Series</h3>
-            <ResponsiveContainer width="100%" height={280}>
+            <ResponsiveContainer width="100%" height={300}>
               <LineChart data={chartData} margin={{ top: 5, right: 10, bottom: 20, left: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis dataKey="time" tick={{ fontSize: 10 }}
@@ -222,18 +278,11 @@ export default function TimePanel() {
           </div>
         )}
 
-        {/* 5. Run Analysis */}
-        <div className="card">
-          <button className="btn btn-primary" onClick={handleAnalyze} disabled={analyzing}>
-            {analyzing ? "Analyzing..." : "Run Analysis"}
-          </button>
-        </div>
-
-        {/* 6. Analysis Results */}
+        {/* ── Analysis Results ── */}
         {analysisResult && (
           <div className="card">
             <h3 style={{ fontSize: 13, fontWeight: 600, marginBottom: "0.75rem" }}>Analysis Results</h3>
-            <div className="metrics">
+            <div className="metrics" style={{ marginBottom: "0.75rem" }}>
               <div className="metric-box">
                 <div className="label">Rows</div>
                 <div className="value">{analysisResult.dimensions?.n_rows?.toLocaleString()}</div>
@@ -245,7 +294,7 @@ export default function TimePanel() {
             </div>
             {analysisResult.plot_urls?.map(url => (
               <img key={url} src={`${API}${url}`} alt="analysis"
-                style={{ width: "100%", marginTop: "1rem", borderRadius: 8 }} />
+                style={{ width: "100%", marginTop: "0.75rem", borderRadius: 8 }} />
             ))}
           </div>
         )}

@@ -44,25 +44,14 @@ async def upload_file(file: UploadFile = File(...)):
 
 @router.get("/columns")
 def get_columns(filename: str, type: str = "static"):
-    """
-    Read CSV and return:
-      - columns list
-      - batch_ids (for timeseries)
-      - data as JSON (for frontend rendering)
-
-    type: "static" | "timeseries"
-    """
     file_path = config.DATA_DIR / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail=f"File not found: {filename}")
 
     df = pd.read_csv(file_path)
-
-    # Replace NaN with None for JSON serialization
     df = df.where(pd.notnull(df), None)
 
     if type == "timeseries":
-        # Detect batch column
         batch_col = next(
             (c for c in df.columns if "batch" in c.lower()), None
         )
@@ -70,7 +59,6 @@ def get_columns(filename: str, type: str = "static"):
             (c for c in df.columns if "time" in c.lower() or "day" in c.lower()), None
         )
 
-        # Skip meta columns
         skip_cols = set()
         if batch_col: skip_cols.add(batch_col)
         if time_col:  skip_cols.add(time_col)
@@ -78,9 +66,8 @@ def get_columns(filename: str, type: str = "static"):
         skip_cols.update([c for c in df.columns if "titer" in c.lower()])
 
         feature_cols = [c for c in df.columns if c not in skip_cols]
-        batch_ids    = sorted(df[batch_col].unique().tolist()) if batch_col else []
+        batch_ids = sorted(df[batch_col].unique().tolist()) if batch_col else []
 
-        # Build data: {batch_id: {col: [values], time: [times]}}
         data = {}
         if batch_col and time_col:
             for bid, grp in df.groupby(batch_col):
@@ -103,16 +90,24 @@ def get_columns(filename: str, type: str = "static"):
 
     else:
         # Static
-        skip_cols = {"batch_id"}
+        skip_cols = {"Batch_ID", "titer_final", "viab_final"}
         feature_cols = [c for c in df.columns if c not in skip_cols]
 
-        # Build data: {col: [values]}
         data = {col: df[col].tolist() for col in feature_cols}
+
+        # Batch_ID 데이터 추가 (batch 필터링용)
+        if "Batch_ID" in df.columns:
+            data["Batch_ID"] = df["Batch_ID"].tolist()
+            batch_ids = sorted(df["Batch_ID"].unique().tolist())
+        else:
+            batch_ids = []
 
         return {
             "type"      : "static",
             "filename"  : filename,
             "columns"   : feature_cols,
+            "batch_col" : "Batch_ID",
+            "batch_ids" : batch_ids,
             "n_rows"    : len(df),
             "data"      : data,
         }

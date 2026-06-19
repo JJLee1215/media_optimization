@@ -1,47 +1,110 @@
 import { useState, useEffect, useRef } from "react";
 import axios from "axios";
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, Cell
-} from "recharts";
+import "./TrainPage.css";
 
 const API = "http://localhost:8000";
 
-const MODEL_GROUPS = [
-  { value: "all",          label: "All Models" },
-  { value: "static",       label: "Static  (GP, RF, XGBoost, MLP)" },
-  { value: "time",         label: "Time Series  (RNN, LSTM, Transformer)" },
-  { value: "static_time",  label: "StaticTimeGNN" },
-];
-
-const COLORS = {
-  gaussian_process : "#1D9E75",
-  random_forest    : "#0F6E56",
-  xgboost          : "#534AB7",
-  mlp              : "#7F77DD",
-  rnn              : "#BA7517",
-  lstm             : "#EF9F27",
-  transformer      : "#FAC775",
-  static_time_gnn  : "#E24B4A",
+const MODEL_ICONS = {
+  gaussian_process : "📈",
+  xgboost          : "⚡",
+  random_forest    : "🌲",
+  mlp              : "🧠",
+  rnn              : "🔁",
+  lstm             : "⏱️",
+  transformer      : "⚙️",
+  static_time_gnn  : "🕸️",
 };
 
 export default function TrainPage() {
-  const [group,   setGroup]   = useState("static");
-  const [status,  setStatus]  = useState("idle");
-  const [message, setMessage] = useState("");
-  const [results, setResults] = useState(null);
-  const [chartUrl, setChartUrl] = useState(null);
-  const pollRef = useRef(null);
+  const [models,          setModels]          = useState({ static: [], timeseries: [], static_time: [] });
+  const [selected,        setSelected]        = useState([]);
+  const [status,          setStatus]          = useState("idle");
+  const [message,         setMessage]         = useState("");
+  const [allResults,      setAllResults]      = useState({});
+  const [staticFile,      setStaticFile]      = useState("");
+  const [tsFile,          setTsFile]          = useState("");
+  const [staticUploading, setStaticUploading] = useState(false);
+  const [tsUploading,     setTsUploading]     = useState(false);
+  const staticInputRef = useRef(null);
+  const tsInputRef     = useRef(null);
+  const pollRef        = useRef(null);
 
-  useEffect(() => () => clearInterval(pollRef.current), []);
+  useEffect(() => {
+    fetchModels();
+    fetchAllResults();
+    return () => clearInterval(pollRef.current);
+  }, []);
+
+  const fetchModels = async () => {
+    try {
+      const { data } = await axios.get(`${API}/train/models`);
+      setModels(data);
+    } catch (e) {}
+  };
+
+  const fetchAllResults = async () => {
+    try {
+      const { data } = await axios.get(`${API}/train/results/all`);
+      setAllResults(data);
+    } catch (e) {}
+  };
+
+  const handleStaticUpload = async (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    setStaticUploading(true);
+    try {
+      const form = new FormData();
+      form.append("file", f);
+      const { data } = await axios.post(`${API}/data/upload`, form);
+      setStaticFile(data.filename);
+    } catch (e) {} finally {
+      setStaticUploading(false);
+    }
+  };
+
+  const handleTsUpload = async (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    setTsUploading(true);
+    try {
+      const form = new FormData();
+      form.append("file", f);
+      const { data } = await axios.post(`${API}/data/upload`, form);
+      setTsFile(data.filename);
+    } catch (e) {} finally {
+      setTsUploading(false);
+    }
+  };
+
+  const clearStaticFile = () => {
+    setStaticFile("");
+    if (staticInputRef.current) staticInputRef.current.value = "";
+  };
+
+  const clearTsFile = () => {
+    setTsFile("");
+    if (tsInputRef.current) tsInputRef.current.value = "";
+  };
+
+  const toggleModel = (id) => {
+    setSelected(prev =>
+      prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]
+    );
+  };
+
+  const hasStGnn = selected.includes("static_time_gnn");
+  const canTrain = selected.length > 0 &&
+    !(hasStGnn && (!staticFile || !tsFile));
 
   const handleTrain = async () => {
+    if (!canTrain) return;
     setStatus("running");
     setMessage("Training started...");
-    setResults(null);
-    setChartUrl(null);
 
-    await axios.post(`${API}/train`, { model: group });
+    for (const modelId of selected) {
+      await axios.post(`${API}/train`, { model: modelId });
+    }
 
     pollRef.current = setInterval(async () => {
       const { data } = await axios.get(`${API}/train/status`);
@@ -50,10 +113,8 @@ export default function TrainPage() {
       if (data.status === "done") {
         clearInterval(pollRef.current);
         setStatus("done");
-        setResults(data.result);
-        // fetch compare chart
-        const cmp = await axios.get(`${API}/compare?mode=train`);
-        setChartUrl(cmp.data.chart_url);
+        fetchModels();
+        fetchAllResults();
       } else if (data.status === "error") {
         clearInterval(pollRef.current);
         setStatus("error");
@@ -61,48 +122,118 @@ export default function TrainPage() {
     }, 1500);
   };
 
-  // Build bar chart data from results
-  const barData = results
-    ? Object.entries(results)
-        .filter(([, r]) => r && (r.rmse || r.titer_rmse))
-        .map(([name, r]) => ({
-          name : name.replace(/_/g, " "),
-          rmse : r.rmse ?? r.titer_rmse,
-          color: COLORS[name] ?? "#888",
-        }))
-        .sort((a, b) => a.rmse - b.rmse)
-    : [];
+  const allModels = [
+    ...models.static,
+    ...models.timeseries,
+    ...models.static_time,
+  ];
+
+  const resultRows = allModels
+    .filter(m => allResults[m.id])
+    .map(m => ({ ...m, result: allResults[m.id] }));
+
+  const bestR2Model = resultRows
+    .filter(m => m.result.r2 !== undefined)
+    .reduce((best, m) =>
+      (m.result.r2 ?? -99) > (best?.result?.r2 ?? -99) ? m : best, null
+    );
+
+  const ModelCard = ({ m, type }) => (
+    <div
+      className={"model-card" + (selected.includes(m.id) ? ` selected ${type}` : "")}
+      onClick={() => toggleModel(m.id)}
+    >
+      {selected.includes(m.id) && <span className={`model-check ${type}`}>✓</span>}
+      <span className="model-icon">{MODEL_ICONS[m.id]}</span>
+      <span className="model-name">{m.name}</span>
+      <span className="model-desc">{m.desc}</span>
+      {m.has_model
+        ? <span className="model-badge saved">{m.model_file}</span>
+        : <span className="model-badge none">no saved model</span>
+      }
+      {allResults[m.id] && (
+        <span className="model-r2">
+          {allResults[m.id].r2 !== undefined
+            ? `R² ${allResults[m.id].r2.toFixed(3)}`
+            : `RMSE ${(allResults[m.id].titer_rmse ?? allResults[m.id].rmse ?? "—")}`
+          }
+        </span>
+      )}
+    </div>
+  );
+
+  const FileUploadItem = ({ label, file, uploading, inputRef, onUpload, onClear, color }) => (
+    <div className="train-bar-item" style={{ flex: 1.5 }}>
+      <span className="train-bar-label">{label}</span>
+      {!file ? (
+        <>
+          <input
+            ref={inputRef}
+            type="file"
+            accept=".csv"
+            id={`file-${label}`}
+            style={{ display: "none" }}
+            onChange={onUpload}
+            disabled={uploading}
+          />
+          <label htmlFor={`file-${label}`} className="file-upload-btn">
+            {uploading ? "Uploading..." : "Choose file"}
+          </label>
+        </>
+      ) : (
+        <div className="file-uploaded-row">
+          <span style={{ fontSize: 11, color, fontWeight: 600 }}>📄 {file}</span>
+          <button className="file-clear-btn" onClick={onClear}>✕</button>
+        </div>
+      )}
+    </div>
+  );
 
   return (
-    <div>
-      <h1 className="page-title">Model Train</h1>
+    <div className="train-page">
 
-      {/* Controls */}
-      <div className="card">
-        <h2>Select Model Group</h2>
-        <div className="form-row">
-          <div className="form-group">
-            <label>Model Group</label>
-            <select value={group} onChange={e => setGroup(e.target.value)}>
-              {MODEL_GROUPS.map(g => (
-                <option key={g.value} value={g.value}>{g.label}</option>
-              ))}
-            </select>
-          </div>
+      {/* ── 상단 바 ── */}
+      <div className="train-bar-top">
+        <FileUploadItem
+          label="Static file"
+          file={staticFile}
+          uploading={staticUploading}
+          inputRef={staticInputRef}
+          onUpload={handleStaticUpload}
+          onClear={clearStaticFile}
+          color="#1D9E75"
+        />
+        <FileUploadItem
+          label="Timeseries file"
+          file={tsFile}
+          uploading={tsUploading}
+          inputRef={tsInputRef}
+          onUpload={handleTsUpload}
+          onClear={clearTsFile}
+          color="#185FA5"
+        />
+        <div className="train-bar-item">
+          <span className="train-bar-label">Selected</span>
+          <span className="train-bar-value">{selected.length} models</span>
+        </div>
+        <div className="train-bar-item">
+          <span className="train-bar-label">Trained</span>
+          <span className="train-bar-value">{resultRows.length} models</span>
+        </div>
+        <div className="train-bar-item" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
           <button
-            className="btn btn-primary"
+            className="train-run-btn"
             onClick={handleTrain}
-            disabled={status === "running"}
-            style={{ alignSelf: "flex-end" }}
+            disabled={status === "running" || !canTrain}
           >
-            {status === "running" ? "Training..." : "Train"}
+            {status === "running" ? "⏳ Training..." : "▶ Train selected"}
           </button>
         </div>
       </div>
 
-      {/* Status */}
+      {/* ── 진행 상태 ── */}
       {status !== "idle" && (
-        <div className={`status-bar status-${status}`}>
+        <div className={`status-bar status-${status === "running" ? "running" : status === "done" ? "done" : "error"}`}>
           {status === "running" && "⏳ "}
           {status === "done"    && "✅ "}
           {status === "error"   && "❌ "}
@@ -110,53 +241,81 @@ export default function TrainPage() {
         </div>
       )}
 
-      {/* RMSE bar chart (inline) */}
-      {barData.length > 0 && (
-        <div className="card">
-          <h2>RMSE Comparison</h2>
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={barData} margin={{ top: 10, right: 20, bottom: 40, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="name" tick={{ fontSize: 11 }} angle={-20} textAnchor="end" />
-              <YAxis label={{ value: "RMSE", angle: -90, position: "insideLeft" }} />
-              <Tooltip formatter={v => v.toFixed(4)} />
-              <Bar dataKey="rmse" radius={[4, 4, 0, 0]}>
-                {barData.map((d, i) => (
-                  <Cell key={i} fill={d.color} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+      {/* ── Static 모델 ── */}
+      <div className="model-section">
+        <div className="section-header static">
+          <span className="section-title">Static models</span>
+          <span className="section-badge static">batch_table_syn.csv</span>
         </div>
-      )}
+        <div className="model-grid">
+          {models.static.map(m => <ModelCard key={m.id} m={m} type="static" />)}
+        </div>
+      </div>
 
-      {/* Result table */}
-      {results && (
+      {/* ── Time Series 모델 ── */}
+      <div className="model-section">
+        <div className="section-header ts">
+          <span className="section-title">Time Series models</span>
+          <span className="section-badge ts">timeseries_syn.csv</span>
+        </div>
+        <div className="model-grid">
+          {models.timeseries.map(m => <ModelCard key={m.id} m={m} type="ts" />)}
+        </div>
+      </div>
+
+      {/* ── Static & Time Series 모델 ── */}
+      <div className="model-section">
+        <div className="section-header st">
+          <span className="section-title">Static &amp; Time Series models</span>
+          <span className="section-badge st">batch_table_syn.csv + timeseries_syn.csv</span>
+        </div>
+        <div className="st-note">두 파일이 모두 선택되어야 학습 가능합니다</div>
+        <div className="model-grid">
+          {models.static_time.map(m => <ModelCard key={m.id} m={m} type="st" />)}
+        </div>
+      </div>
+
+      {/* ── 결과 비교 테이블 ── */}
+      {resultRows.length > 0 && (
         <div className="card">
-          <h2>Results</h2>
+          <h3 style={{ fontSize: 13, fontWeight: 600, marginBottom: "0.75rem" }}>Model Comparison</h3>
           <table className="result-table">
             <thead>
               <tr>
                 <th>Model</th>
-                <th>RMSE</th>
                 <th>R²</th>
+                <th>RMSE</th>
+                <th>CV R² (mean ± std)</th>
               </tr>
             </thead>
             <tbody>
-              {Object.entries(results)
-                .filter(([, r]) => r && !r.error)
-                .sort((a, b) => (a[1].rmse ?? a[1].titer_rmse) - (b[1].rmse ?? b[1].titer_rmse))
-                .map(([name, r]) => (
-                  <tr key={name}>
-                    <td>{name.replace(/_/g, " ")}</td>
-                    <td>{(r.rmse ?? r.titer_rmse ?? "—").toFixed?.(4) ?? "—"}</td>
-                    <td>{r.r2?.toFixed(4) ?? "—"}</td>
-                  </tr>
-                ))}
+              {resultRows.map(m => (
+                <tr key={m.id} className={m.id === bestR2Model?.id ? "best-row" : ""}>
+                  <td style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span>{MODEL_ICONS[m.id]}</span>
+                    <span>{m.name}</span>
+                    {m.id === bestR2Model?.id && <span className="best-badge">best</span>}
+                  </td>
+                  <td style={{ fontWeight: m.id === bestR2Model?.id ? 700 : 400 }}>
+                    {m.result.r2?.toFixed(4) ?? "—"}
+                  </td>
+                  <td>
+                    {m.result.rmse?.toFixed(4)
+                      ?? m.result.titer_rmse?.toFixed(4)
+                      ?? "—"}
+                  </td>
+                  <td>
+                    {m.result.cv_r2_mean !== undefined
+                      ? `${m.result.cv_r2_mean.toFixed(3)} ± ${m.result.cv_r2_std?.toFixed(3)}`
+                      : "—"}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
       )}
+
     </div>
   );
 }

@@ -55,7 +55,7 @@ TS_N_BATCHES  = 100
 TS_SEQ_LEN    = 14
 TS_SAVE_NAME  = "timeseries_syn.csv"
 
-TS_BATCH_COL  = "Batch ID"
+TS_BATCH_COL  = "Batch_ID"
 TS_TIME_COL   = "Time (day)"
 TS_FAULT_COL  = "Fault flag"
 TS_TARGET_COL = "Titer (g/L)"
@@ -123,7 +123,7 @@ def make_static_data() -> pd.DataFrame:
     np.random.seed(SEED)
     n = STATIC_N_SAMPLES
 
-    data = {"batch_id": range(1, n + 1)}
+    data = {"Batch_ID": range(1, n + 1)}
     col_vals = {}
     for col, (lo, hi, *_) in STATIC_FEATURES.items():
         col_vals[col] = np.random.uniform(lo, hi, n)

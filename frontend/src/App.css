@@ -54,7 +54,6 @@ body {
   padding: 0;           /* 0 유지 */
   flex: 1;
   min-width: 0;
-  width: calc(100vw - 220px);
   height: 100vh;        /* ★ 추가: 화면 높이를 100% 다 쓰도록 강제 */
   overflow: hidden;     /* ★ 추가: 전체 스크롤을 막고 내부 분할 패널만 스크롤되게 함 */
   background: #f5f6fa;

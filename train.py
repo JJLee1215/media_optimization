@@ -94,7 +94,7 @@ def train_static_time():
     df_static  = __import__("pandas").read_csv(config.DATA_STATIC)
     df_dynamic = __import__("pandas").read_csv(config.DATA_TIMESERIES)
 
-    drop_cols  = ["batch_id", "titer_final", "viab_final"]
+    drop_cols  = ["Batch_ID", "titer_final", "viab_final"]
     static_cols = [c for c in df_static.columns if c not in drop_cols]
 
     m_static  = torch.tensor(df_static[static_cols].values, dtype=torch.float32)
@@ -102,7 +102,7 @@ def train_static_time():
     y_viab    = torch.tensor(df_static["viab_final"].values,  dtype=torch.float32)
 
     # Time series
-    batch_col  = "Batch ID"
+    batch_col  = "Batch_ID"
     time_col   = "Time (day)"
     target_col = "Titer (g/L)"
     skip_cols  = [batch_col, time_col, "Fault flag", target_col]
