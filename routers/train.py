@@ -18,6 +18,8 @@ from fastapi import APIRouter
 from fastapi.background import BackgroundTasks
 from pydantic import BaseModel
 
+from Models._registry import get_registry_by_section
+
 import config
 
 router = APIRouter(prefix="/train", tags=["Model Train"])
@@ -74,22 +76,8 @@ def get_train_status():
 
 @router.get("/models")
 def get_models():
-    models = {
-        "static": [
-            {"id": "gaussian_process", "name": "GP",          "desc": "Gaussian Process",  "icon": "ti-chart-line"},
-            {"id": "xgboost",          "name": "XGBoost",     "desc": "Gradient Boosting", "icon": "ti-bolt"},
-            {"id": "random_forest",    "name": "RF",          "desc": "Random Forest",     "icon": "ti-trees"},
-            {"id": "mlp",              "name": "MLP",         "desc": "Neural Network",    "icon": "ti-brain"},
-        ],
-        "timeseries": [
-            {"id": "rnn",              "name": "RNN",         "desc": "Recurrent Network", "icon": "ti-refresh"},
-            {"id": "lstm",             "name": "LSTM",        "desc": "Long Short-Term",   "icon": "ti-clock"},
-            {"id": "transformer",      "name": "Transformer", "desc": "Attention-based",   "icon": "ti-settings"},
-        ],
-        "static_time": [
-            {"id": "static_time_gnn",  "name": "StaticTimeGNN", "desc": "Static + Timeseries", "icon": "ti-share"},
-        ],
-    }
+    """Return model availability from registry + saved file info.""" 
+    models = get_registry_by_section()
 
     for group in models.values():
         for m in group:

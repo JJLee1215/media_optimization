@@ -216,3 +216,48 @@
   line-height: 1;
 }
 .file-clear-btn:hover { color: #E24B4A; }
+
+/* ── 그래프 탭 ── */
+.graph-tab-bar {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+  border-bottom: 2px solid #e0e0e0;
+  padding-bottom: 0.5rem;
+}
+
+.graph-tab {
+  padding: 0.35rem 0.9rem;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid #ddd;
+  border-radius: 20px;
+  background: #f8f9fa;
+  color: #555;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.graph-tab:hover { background: #eee; }
+.graph-tab.active { background: #1D9E75; color: #fff; border-color: #1D9E75; }
+
+/* ── 그래프 그리드 ── */
+.graph-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+}
+
+.graph-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.graph-item-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #888;
+  text-transform: capitalize;
+}

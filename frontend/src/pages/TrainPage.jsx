@@ -21,6 +21,8 @@ export default function TrainPage() {
   const [status,          setStatus]          = useState("idle");
   const [message,         setMessage]         = useState("");
   const [allResults,      setAllResults]      = useState({});
+  const [allImages,       setAllImages]       = useState({});
+  const [selectedTab,     setSelectedTab]     = useState(null);
   const [staticFile,      setStaticFile]      = useState("");
   const [tsFile,          setTsFile]          = useState("");
   const [staticUploading, setStaticUploading] = useState(false);
@@ -31,7 +33,13 @@ export default function TrainPage() {
 
   useEffect(() => {
     fetchModels();
-    fetchAllResults();
+    fetchAllResults().then(() => {
+      // 결과 있는 모델의 이미지도 로드
+      axios.get(`${API}/train/results/all`).then(({ data }) => {
+        const ids = Object.keys(data);
+        if (ids.length > 0) fetchAllImages(ids);
+      }).catch(() => {});
+    });
     return () => clearInterval(pollRef.current);
   }, []);
 
@@ -47,6 +55,22 @@ export default function TrainPage() {
       const { data } = await axios.get(`${API}/train/results/all`);
       setAllResults(data);
     } catch (e) {}
+  };
+
+  const fetchAllImages = async (modelIds) => {
+    const images = {};
+    for (const mid of modelIds) {
+      try {
+        const { data } = await axios.get(`${API}/train/results/${mid}`);
+        if (data.images && Object.keys(data.images).length > 0) {
+          images[mid] = data.images;
+        }
+      } catch (e) {}
+    }
+    setAllImages(images);
+    // 첫 번째 이미지 있는 모델을 기본 탭으로
+    const firstWithImages = modelIds.find(m => images[m]);
+    if (firstWithImages) setSelectedTab(firstWithImages);
   };
 
   const handleStaticUpload = async (e) => {
@@ -115,6 +139,8 @@ export default function TrainPage() {
         setStatus("done");
         fetchModels();
         fetchAllResults();
+        const trainedIds = Object.keys(allResults);
+        fetchAllImages(trainedIds);
       } else if (data.status === "error") {
         clearInterval(pollRef.current);
         setStatus("error");
@@ -313,6 +339,41 @@ export default function TrainPage() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* ── 그래프 섹션 ── */}
+      {Object.keys(allImages).length > 0 && (
+        <div className="card">
+          <h3 style={{ fontSize: 13, fontWeight: 600, marginBottom: "0.75rem" }}>Result Graphs</h3>
+
+          {/* 모델 탭 */}
+          <div className="graph-tab-bar">
+            {Object.keys(allImages).map(mid => {
+              const m = allModels.find(m => m.id === mid);
+              return (
+                <button
+                  key={mid}
+                  className={"graph-tab" + (selectedTab === mid ? " active" : "")}
+                  onClick={() => setSelectedTab(mid)}
+                >
+                  {MODEL_ICONS[mid]} {m?.name ?? mid}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* 선택된 모델 그래프 */}
+          {selectedTab && allImages[selectedTab] && (
+            <div className="graph-grid">
+              {Object.entries(allImages[selectedTab]).map(([stem, url]) => (
+                <div key={stem} className="graph-item">
+                  <div className="graph-item-title">{stem.replace(/_/g, " ")}</div>
+                  <img src={`${API}${url}`} alt={stem} style={{ width: "100%", borderRadius: 8 }} />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

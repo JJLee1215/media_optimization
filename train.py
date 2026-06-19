@@ -184,7 +184,7 @@ def train_model(model_name):
         raise ValueError(f"Unknown model: {model_name}")
 
     # Save result JSON
-    result_path = config.result_dir(model_name) / "train_result.json"
+    result_path = config.result_dir(model_name) / "result.json"
     result_path.parent.mkdir(parents=True, exist_ok=True)
     with open(result_path, "w") as f:
         json.dump(result, f, indent=2)

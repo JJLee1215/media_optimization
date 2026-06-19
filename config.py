@@ -108,6 +108,7 @@ def make_dirs():
         RESULTS_TT_DIR / "lstm",
         RESULTS_TT_DIR / "transformer",
         RESULTS_TT_DIR / "gnn",
+        RESULTS_TT_DIR / "static_time_gnn"
     ]
     for d in dirs:
         d.mkdir(parents=True, exist_ok=True)
@@ -116,7 +117,7 @@ def make_dirs():
 
 def model_save_path(model_name: str) -> Path:
     """Return model save path. e.g. model_save_path('gnn') → Results_Models/gnn_best.pt"""
-    ext = ".pt" if model_name in {"mlp", "rnn", "lstm", "transformer", "gnn"} else ".pkl"
+    ext = ".pt" if model_name in {"mlp", "rnn", "lstm", "transformer", "gnn", "static_time_gnn"} else ".pkl"
     return RESULTS_MODELS_DIR / f"{model_name}_best{ext}"
 
 
