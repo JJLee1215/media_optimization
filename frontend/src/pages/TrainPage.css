@@ -64,6 +64,61 @@
   cursor: not-allowed;
 }
 
+/* ── Pipeline 옵션 바 ── */
+.pipeline-option-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: #f8f9fa;
+  border: 1px solid #e0e0e0;
+  border-radius: 10px;
+  padding: 0.6rem 1rem;
+}
+
+.pipeline-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-right: 0.25rem;
+}
+
+.pipeline-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #888;
+  cursor: pointer;
+  padding: 0.3rem 0.75rem;
+  border-radius: 20px;
+  border: 1px solid #ddd;
+  background: #fff;
+  transition: all 0.15s;
+}
+
+.pipeline-toggle input {
+  display: none;
+}
+
+.pipeline-toggle.active {
+  background: #1a1f2e;
+  color: #1D9E75;
+  border-color: #1a1f2e;
+}
+
+.pipeline-note {
+  font-size: 11px;
+  color: #b8860b;
+  background: #fff8e1;
+  border: 1px solid #ffe082;
+  border-radius: 8px;
+  padding: 0.2rem 0.6rem;
+  margin-left: auto;
+}
+
 /* ── 섹션 ── */
 .model-section {
   display: flex;
@@ -261,3 +316,93 @@
   color: #888;
   text-transform: capitalize;
 }
+
+/* ── 로그 박스 ── */
+.log-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.log-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.log-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hourglass-icon {
+  font-size: 14px;
+}
+
+.live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #1D9E75;
+  display: inline-block;
+  animation: live-pulse 1.2s infinite;
+}
+
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.2; }
+}
+
+.hg-text {
+  font-size: 11px;
+  color: #555;
+}
+
+.log-elapsed {
+  font-size: 11px;
+  color: #888;
+  font-variant-numeric: tabular-nums;
+  min-width: 28px;
+}
+
+.log-box {
+  background: #0f1117;
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  font-family: monospace;
+  font-size: 11px;
+  line-height: 1.8;
+  color: #c9d1d9;
+  min-height: 150px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.log-clear {
+  font-size: 10px;
+  color: #888;
+  cursor: pointer;
+  background: none;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 2px 8px;
+}
+
+.log-clear:hover { color: #333; }
+
+.log-line       { display: block; }
+.log-line.green { color: #3fb950; }
+.log-line.red   { color: #f85149; }
+.log-line.yellow{ color: #e3b341; }
+.log-line.muted { color: #6e7681; }
+.log-line.white { color: #e6edf3; }
+.log-line.divider { color: #30363d; }

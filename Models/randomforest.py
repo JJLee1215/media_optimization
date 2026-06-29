@@ -111,20 +111,28 @@ class RandomForestModel:
         }
 
     def feature_importance(self, x_cols=None):
-        """Save feature importance bar chart."""
         cols = x_cols or self.x_cols
         if cols is None:
             print("[RandomForest] x_cols not provided, skipping feature importance.")
             return
 
         imp = self.model.feature_importances_
+
+        # pipeline 적용 후 feature 수가 cols보다 많을 수 있음
+        if len(cols) != len(imp):
+            cols = [f"feature_{i}" for i in range(len(imp))]
+
         idx = np.argsort(imp)
 
-        fig, ax = plt.subplots(figsize=(6, 5))
+        # 상위 20개만 표시
+        if len(idx) > 20:
+            idx = idx[-20:]
+
+        fig, ax = plt.subplots(figsize=(6, 8))
         ax.barh(range(len(idx)), imp[idx], color="#9FE1CB", edgecolor="white")
         ax.set_yticks(range(len(idx)))
         ax.set_yticklabels([cols[i] for i in idx], fontsize=8)
-        ax.set_title("Feature Importance")
+        ax.set_title("Feature Importance (Top 20)")
         ax.set_xlabel("Importance")
         plt.tight_layout()
         plt.savefig(RESULT_DIR / "feature_importance.png", dpi=120)

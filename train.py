@@ -3,11 +3,12 @@ train.py
 Model training entry point
 
 Usage:
-  python train.py --model all           train all models
-  python train.py --model static        GP, RandomForest, XGBoost, MLP
-  python train.py --model time          RNN, LSTM, Transformer
-  python train.py --model static_time   StaticTimeGNN
-  python train.py --model gp            single model
+  python train.py --model all                    train all models (pipeline off)
+  python train.py --model static                 GP, RandomForest, XGBoost, MLP
+  python train.py --model static --pipeline      with media pipeline (heterogeneity)
+  python train.py --model time                   RNN, LSTM, Transformer
+  python train.py --model static_time            StaticTimeGNN
+  python train.py --model gaussian_process       single model
 """
 
 import sys
@@ -63,8 +64,8 @@ def get_model(model_name):
         raise ValueError(f"Unknown model: {model_name}")
 
 
-def train_static(model_name):
-    X_train, X_test, y_train, y_test, x_cols, scaler = get_static_data()
+def train_static(model_name, use_pipeline=False):
+    X_train, X_test, y_train, y_test, x_cols, scaler = get_static_data(use_pipeline=use_pipeline)
     model = get_model(model_name)
     model.train(X_train, y_train, x_cols=x_cols, scaler=scaler)
     result = model.evaluate(X_test, y_test)
@@ -85,23 +86,32 @@ def train_time(model_name):
     return result
 
 
-def train_static_time():
+def train_static_time(use_pipeline=False):
     """StaticTimeGNN — uses both static and timeseries data."""
     from torch.utils.data import Dataset, DataLoader, random_split
     from Models.StaticTimeGNN import StaticTimeGNNModel
+    import pandas as pd
 
-    # Load data
-    df_static  = __import__("pandas").read_csv(config.DATA_STATIC)
-    df_dynamic = __import__("pandas").read_csv(config.DATA_TIMESERIES)
+    df_static  = pd.read_csv(config.DATA_STATIC)
+    df_dynamic = pd.read_csv(config.DATA_TIMESERIES)
 
-    drop_cols  = ["Batch_ID", "titer_final", "viab_final"]
+    drop_cols   = ["Batch_ID", "titer_final", "viab_final"]
     static_cols = [c for c in df_static.columns if c not in drop_cols]
 
-    m_static  = torch.tensor(df_static[static_cols].values, dtype=torch.float32)
-    y_titer   = torch.tensor(df_static["titer_final"].values, dtype=torch.float32)
-    y_viab    = torch.tensor(df_static["viab_final"].values,  dtype=torch.float32)
+    m_static_np = df_static[static_cols].values.astype(np.float32)
 
-    # Time series
+    # ── pipeline 적용 (m_static에만) ──────────────
+    if use_pipeline:
+        from heterogeneity.smile_gem_pipe import MediaPipeline
+        pipeline    = MediaPipeline()
+        m_static_np = pipeline.transform(m_static_np, static_cols)
+        print(f"[train_static_time] pipeline applied: m_static {df_static[static_cols].shape} → {m_static_np.shape}")
+
+    m_static = torch.tensor(m_static_np, dtype=torch.float32)
+    y_titer  = torch.tensor(df_static["titer_final"].values, dtype=torch.float32)
+    y_viab   = torch.tensor(df_static["viab_final"].values,  dtype=torch.float32)
+
+    # Time series (pipeline 미적용)
     batch_col  = "Batch_ID"
     time_col   = "Time (day)"
     target_col = "Titer (g/L)"
@@ -115,10 +125,9 @@ def train_static_time():
 
     T = min(len(x) for x in X_list)
     X_dynamic = torch.tensor(
-        __import__("numpy").array([x[:T] for x in X_list], dtype=__import__("numpy").float32)
+        np.array([x[:T] for x in X_list], dtype=np.float32)
     )
 
-    # Dataset
     class GNNDataset(Dataset):
         def __init__(self, m, X, yt, yv):
             self.m, self.X, self.yt, self.yv = m, X, yt, yv
@@ -135,9 +144,8 @@ def train_static_time():
     train_loader = DataLoader(train_set, batch_size=config.GNN_BATCH_SIZE, shuffle=True)
     val_loader   = DataLoader(val_set,   batch_size=config.GNN_BATCH_SIZE)
 
-    # Build A0
-    N     = len(feat_cols)
-    A0    = torch.zeros(N, N)
+    N  = len(feat_cols)
+    A0 = torch.zeros(N, N)
     media_idx   = list(range(9))
     feed_idx    = list(range(9, 13))
     process_idx = list(range(13, N))
@@ -155,9 +163,8 @@ def train_static_time():
     fill(A0, process_idx, feed_idx,    0.1)
     for i in range(N): A0[i, i] = 1.0
 
-    # Train
     model = StaticTimeGNNModel(
-        d_static  = m_static.shape[1],
+        d_static  = m_static.shape[1],   # pipeline 켜면 230, 끄면 9 자동 반영
         d_dynamic = X_dynamic.shape[2],
         N         = N,
         A0        = A0,
@@ -168,22 +175,22 @@ def train_static_time():
     return result
 
 
-def train_model(model_name):
+def train_model(model_name, use_pipeline=False):
     config.make_dirs()
     print(f"\n{'='*55}")
     print(f"  Training: {model_name.upper()}")
+    print(f"  Pipeline: {'ON' if use_pipeline else 'OFF'}")
     print(f"{'='*55}")
 
     if model_name in STATIC_MODELS:
-        result = train_static(model_name)
+        result = train_static(model_name, use_pipeline=use_pipeline)
     elif model_name in TIME_MODELS:
         result = train_time(model_name)
     elif model_name == "static_time_gnn":
-        result = train_static_time()
+        result = train_static_time(use_pipeline=use_pipeline)
     else:
         raise ValueError(f"Unknown model: {model_name}")
 
-    # Save result JSON
     result_path = config.result_dir(model_name) / "result.json"
     result_path.parent.mkdir(parents=True, exist_ok=True)
     with open(result_path, "w") as f:
@@ -192,18 +199,17 @@ def train_model(model_name):
     return result
 
 
-def train_group(group: str):
+def train_group(group: str, use_pipeline=False):
     models  = MODEL_GROUPS[group]
     results = {}
 
     for name in models:
         try:
-            results[name] = train_model(name)
+            results[name] = train_model(name, use_pipeline=use_pipeline)
         except Exception as e:
             print(f"\n[{name}] Error: {e}")
             results[name] = {"error": str(e)}
 
-    # Compare
     all_results = collect_results("train")
     print_table(all_results, "train")
     plot_comparison(all_results, "train")
@@ -214,11 +220,15 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model", type=str, required=True,
         choices=list(MODEL_GROUPS.keys()) + ALL_MODELS,
-        help="Model or group to train"
+        help="Model or group to train",
+    )
+    parser.add_argument(
+        "--pipeline", action="store_true", default=False,
+        help="Enable media pipeline — heterogeneity processing (static/static_time only)",
     )
     args = parser.parse_args()
 
     if args.model in MODEL_GROUPS:
-        train_group(args.model)
+        train_group(args.model, use_pipeline=args.pipeline)
     else:
-        train_model(args.model)
+        train_model(args.model, use_pipeline=args.pipeline)
