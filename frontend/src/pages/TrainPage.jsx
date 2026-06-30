@@ -31,7 +31,6 @@ export default function TrainPage() {
   const [tsUploading,     setTsUploading]     = useState(false);
   const [usePipeline,     setUsePipeline]     = useState(false);
 
-  // 로그 스트리밍
   const [logs,       setLogs]       = useState([]);
   const [hgIcon,     setHgIcon]     = useState("⏳");
   const [hgText,     setHgText]     = useState("");
@@ -63,19 +62,12 @@ export default function TrainPage() {
     };
   }, []);
 
-  // 로그 추가될 때마다 스크롤
   useEffect(() => {
-    if (logBoxRef.current) {
-      logBoxRef.current.scrollTop = logBoxRef.current.scrollHeight;
-    }
+    if (logBoxRef.current) logBoxRef.current.scrollTop = logBoxRef.current.scrollHeight;
   }, [logs]);
 
-  const fetchModels    = async () => {
-    try { const { data } = await axios.get(`${API}/train/models`); setModels(data); } catch (e) {}
-  };
-  const fetchAllResults = async () => {
-    try { const { data } = await axios.get(`${API}/train/results/all`); setAllResults(data); } catch (e) {}
-  };
+  const fetchModels    = async () => { try { const { data } = await axios.get(`${API}/train/models`); setModels(data); } catch (e) {} };
+  const fetchAllResults = async () => { try { const { data } = await axios.get(`${API}/train/results/all`); setAllResults(data); } catch (e) {} };
   const fetchAllImages = async (modelIds) => {
     const images = {};
     for (const mid of modelIds) {
@@ -115,7 +107,6 @@ export default function TrainPage() {
     setSelected(prev => prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]);
   };
 
-  // 로그 분류
   const classifyLog = (text) => {
     if (text.includes("✅") || text.includes("complete") || text.includes("Saved")) return "green";
     if (text.includes("❌") || text.includes("Error"))   return "red";
@@ -137,10 +128,7 @@ export default function TrainPage() {
   const startElapsed = () => {
     let sec = 0;
     setElapsed(0);
-    elapsedRef.current = setInterval(() => {
-      sec++;
-      setElapsed(sec);
-    }, 1000);
+    elapsedRef.current = setInterval(() => { sec++; setElapsed(sec); }, 1000);
   };
 
   const stopIndicators = () => {
@@ -151,7 +139,6 @@ export default function TrainPage() {
   const handleTrain = async () => {
     if (status === "running" || selected.length === 0) return;
 
-    // 초기화
     setLogs([]);
     setStatus("running");
     setStreaming(true);
@@ -159,7 +146,6 @@ export default function TrainPage() {
     startHourglass();
     startElapsed();
 
-    // SSE 연결
     if (sseRef.current) sseRef.current.close();
     const sse = new EventSource(`${API}/train/stream`);
     sseRef.current = sse;
@@ -169,7 +155,6 @@ export default function TrainPage() {
       if (data.ping) return;
       if (data.log) {
         const text = data.log;
-        // 현재 학습 중 모델명 추출
         const match = text.match(/▶ Training: ([A-Z_]+)/);
         if (match) setHgText(`Training ${match[1].toLowerCase()}...`);
 
@@ -182,9 +167,7 @@ export default function TrainPage() {
           sse.close();
           fetchModels();
           fetchAllResults().then(() => {
-            axios.get(`${API}/train/results/all`).then(({ data }) => {
-              fetchAllImages(Object.keys(data));
-            });
+            axios.get(`${API}/train/results/all`).then(({ data }) => fetchAllImages(Object.keys(data)));
           });
         }
         if (text.includes("❌")) {
@@ -203,7 +186,6 @@ export default function TrainPage() {
       sse.close();
     };
 
-    // 학습 요청
     for (const modelId of selected) {
       await axios.post(`${API}/train`, { model: modelId, use_pipeline: usePipeline });
     }
@@ -285,21 +267,7 @@ export default function TrainPage() {
         </div>
       </div>
 
-      {/* Pipeline 옵션 */}
-      <div className="pipeline-option-bar">
-        <span className="pipeline-label">Heterogeneity</span>
-        <label className={`pipeline-toggle ${!usePipeline ? "active" : ""}`}>
-          <input type="radio" name="pipeline" checked={!usePipeline} onChange={() => setUsePipeline(false)} />
-          No pipeline
-        </label>
-        <label className={`pipeline-toggle ${usePipeline ? "active" : ""}`}>
-          <input type="radio" name="pipeline" checked={usePipeline} onChange={() => setUsePipeline(true)} />
-          SMILES · RDKit · GEM
-        </label>
-        {usePipeline && <span className="pipeline-note">⚠ 데이터 적을 경우 성능 저하 가능</span>}
-      </div>
-
-      {/* 로그 박스 */}
+      {/* ── Training log (위로 이동) ── */}
       <div className="log-wrap">
         <div className="log-header">
           <span className="log-title">Training log</span>
@@ -312,9 +280,7 @@ export default function TrainPage() {
                 <span className="log-elapsed">{elapsedStr}</span>
               </>
             )}
-            {!streaming && elapsed > 0 && (
-              <span className="log-elapsed">완료 {elapsedStr}</span>
-            )}
+            {!streaming && elapsed > 0 && <span className="log-elapsed">완료 {elapsedStr}</span>}
             <button className="log-clear" onClick={() => setLogs([])}>Clear</button>
           </div>
         </div>
@@ -324,6 +290,37 @@ export default function TrainPage() {
             : logs.map((l, i) => <span key={i} className={`log-line ${l.cls}`}>{l.text}<br /></span>)
           }
         </div>
+      </div>
+
+      {/* ── Heterogeneity (카드 형식, 회색) ── */}
+      <div className="model-section">
+        <div className="section-header gray">
+          <span className="section-title">Heterogeneity</span>
+          <span className="section-badge gray">media component representation</span>
+        </div>
+        <div className="model-grid het-grid">
+          <div
+            className={"model-card gray" + (!usePipeline ? " selected gray" : "")}
+            onClick={() => status !== "running" && setUsePipeline(false)}
+          >
+            {!usePipeline && <span className="model-check gray">✓</span>}
+            <span className="model-icon">🚫</span>
+            <span className="model-name">No Pipeline</span>
+            <span className="model-desc">Raw concentration features</span>
+          </div>
+          <div
+            className={"model-card gray" + (usePipeline ? " selected gray" : "")}
+            onClick={() => status !== "running" && setUsePipeline(true)}
+          >
+            {usePipeline && <span className="model-check gray">✓</span>}
+            <span className="model-icon">🧬</span>
+            <span className="model-name">SMILES · RDKit · GEM</span>
+            <span className="model-desc">Molecular embedding pipeline</span>
+          </div>
+        </div>
+        {usePipeline && (
+          <div className="st-note">⚠ 데이터가 적을 경우 성능 저하 가능 (차원 230)</div>
+        )}
       </div>
 
       {/* Static 모델 */}

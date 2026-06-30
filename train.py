@@ -65,6 +65,14 @@ def get_model(model_name):
 
 
 def train_static(model_name, use_pipeline=False):
+    """
+    Static 모델(GP/XGBoost/RF/MLP) 학습.
+
+    use_pipeline : True면 heterogeneity pipeline(SMILES·RDKit·GEM)을 거쳐
+                   9 → 230차원으로 변환된 데이터로 학습.
+                   이 값은 model.save(use_pipeline=...)로 그대로 전달되어
+                   pkl/pt 파일에 함께 저장됨 → predict.py가 동일하게 재현 가능.
+    """
     X_train, X_test, y_train, y_test, x_cols, scaler = get_static_data(use_pipeline=use_pipeline)
     model = get_model(model_name)
     model.train(X_train, y_train, x_cols=x_cols, scaler=scaler)
@@ -73,7 +81,10 @@ def train_static(model_name, use_pipeline=False):
         model.feature_importance()
     if hasattr(model, "cross_validate"):
         model.cross_validate(X_train, y_train)
-    model.save()
+    # ── use_pipeline 정보를 모델 저장 파일에 함께 기록 ──
+    # predict.py가 load() 후 saved["use_pipeline"]을 읽어서
+    # 예측 시 동일한 전처리(9→230 변환)를 자동으로 재현하기 위함
+    model.save(use_pipeline=use_pipeline)
     return result
 
 
@@ -87,7 +98,13 @@ def train_time(model_name):
 
 
 def train_static_time(use_pipeline=False):
-    """StaticTimeGNN — uses both static and timeseries data."""
+    """
+    StaticTimeGNN — uses both static and timeseries data.
+
+    ※ StaticTimeGNN의 save()는 현재 state_dict만 저장하는 구조라
+       use_pipeline 메타정보를 함께 기록하지 못함.
+       추후 save() 구조를 dict 래핑 방식으로 변경할 예정 (보류 중).
+    """
     from torch.utils.data import Dataset, DataLoader, random_split
     from Models.StaticTimeGNN import StaticTimeGNNModel
     import pandas as pd
@@ -171,7 +188,7 @@ def train_static_time(use_pipeline=False):
     )
     model.train(train_loader, val_loader)
     result = model.evaluate(train_loader, val_loader)
-    model.save()
+    model.save()   # ※ use_pipeline 미반영 (보류 중)
     return result
 
 

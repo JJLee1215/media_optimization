@@ -11,6 +11,11 @@ Input:
     Lactate_0, Ammonia_0
     Cu_0, Zn_0, Mn_0, Fe_0
 
+  ※ Heterogeneity pipeline (use_pipeline=True) 적용 시:
+     X_train/X_test는 (n, 230)으로 변환된 상태로 들어옴
+     (SMILES → RDKit descriptor → GEM 벡터 → Mean Pooling)
+     XGBoost 자체는 입력 차원에 무관하게 동작
+
 Target:
   y_train : (n_train,)   titer_final
   y_test  : (n_test,)
@@ -24,6 +29,13 @@ Methods:
   feature_importance() save feature importance plot
   cross_validate()     k-fold cross validation
   save() / load()      persist model to disk
+
+  ※ save(use_pipeline=...) : 학습 시 heterogeneity pipeline 사용 여부를
+     pkl 파일에 함께 기록. predict.py가 이 값을 읽어서
+     예측 시에도 동일하게 pipeline을 적용할지 자동 판단.
+     (학습 차원과 예측 차원이 다르면 StandardScaler.transform()에서
+      ValueError: X has N features, but StandardScaler is expecting M features
+      에러가 발생하므로, 저장된 값으로 분기 처리가 필요함)
 """
 
 import numpy as np
@@ -55,13 +67,23 @@ class XGBoostModel:
         )
         self.scaler = None
         self.x_cols = None
+        # ── heterogeneity pipeline 사용 여부 (기본 False) ──
+        # train_static()에서 use_pipeline=True로 학습되면 True로 설정되고
+        # save() 시 pkl에 함께 저장됨. predict.py가 load() 후 이 값을 읽어서
+        # 9개 raw 입력값을 230차원으로 변환할지 판단하는 데 사용.
+        self.use_pipeline = False
 
     def train(self, X_train, y_train, x_cols=None, scaler=None):
         """
-        X_train : (n_train, 9)  already scaled
+        X_train : (n_train, 9) or (n_train, 230)  already scaled
+                  9   = raw concentration features (pipeline off)
+                  230 = media representation vector (pipeline on)
         y_train : (n_train,)
         x_cols  : feature names (for importance plot)
+                  ※ pipeline on이어도 x_cols는 원본 9개 컴포넌트 이름 그대로 유지됨
+                    (get_static_data가 x_cols를 raw 컬럼명으로 반환하기 때문)
         scaler  : fitted StandardScaler (saved for inference)
+                  ※ pipeline on이면 230차원 기준으로 fit된 scaler가 들어옴
         """
         self.scaler = scaler
         self.x_cols = x_cols
@@ -155,15 +177,26 @@ class XGBoostModel:
               f"  mean={scores.mean():.3f} ± {scores.std():.3f}")
         return scores
 
-    def save(self):
+    def save(self, use_pipeline: bool = False):
+        """
+        모델을 pkl로 저장.
+
+        use_pipeline : 학습 시 heterogeneity pipeline(SMILES·RDKit·GEM)
+                       사용 여부. train.py의 train_static()에서 전달됨.
+                       이 값이 pkl 안에 함께 저장되어, predict.py가
+                       load() 후 동일한 전처리를 자동으로 재현할 수 있게 함.
+        """
+        self.use_pipeline = use_pipeline
         SAVE_PATH.parent.mkdir(parents=True, exist_ok=True)
         with open(SAVE_PATH, "wb") as f:
             pickle.dump({
-                "model"  : self.model,
-                "scaler" : self.scaler,
-                "x_cols" : self.x_cols,
+                "model"       : self.model,
+                "scaler"      : self.scaler,
+                "x_cols"      : self.x_cols,
+                # ── 예측 시 pipeline 적용 여부 판단용 ──
+                "use_pipeline": self.use_pipeline,
             }, f)
-        print(f"[XGBoost] Saved: {SAVE_PATH}")
+        print(f"[XGBoost] Saved: {SAVE_PATH}  (use_pipeline={self.use_pipeline})")
 
     def load(self):
         with open(SAVE_PATH, "rb") as f:
@@ -171,7 +204,9 @@ class XGBoostModel:
         self.model  = data["model"]
         self.scaler = data["scaler"]
         self.x_cols = data["x_cols"]
-        print(f"[XGBoost] Loaded: {SAVE_PATH}")
+        # ── 구버전 pkl 호환: use_pipeline 키가 없으면 False로 간주 ──
+        self.use_pipeline = data.get("use_pipeline", False)
+        print(f"[XGBoost] Loaded: {SAVE_PATH}  (use_pipeline={self.use_pipeline})")
 
 
 if __name__ == "__main__":

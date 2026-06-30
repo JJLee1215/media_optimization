@@ -406,3 +406,83 @@
 .log-line.muted { color: #6e7681; }
 .log-line.white { color: #e6edf3; }
 .log-line.divider { color: #30363d; }
+
+/* ── Heterogeneity 카드 (회색) ── */
+.section-header.gray {
+  border-bottom-color: #888;
+}
+
+.section-badge.gray {
+  background: #f0f0f0;
+  color: #555;
+  border: 1px solid #ccc;
+}
+
+.het-grid {
+  grid-template-columns: repeat(2, 1fr);
+  max-width: 420px;
+}
+
+.model-card.gray.selected,
+.model-card.selected.gray {
+  border-color: #555;
+  background: #f0f0f0;
+}
+
+.model-check.gray {
+  color: #555;
+}
+
+/* ── 카드 (Model Comparison, Result Graphs 등 wrapper) ── */
+.card {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+}
+
+/* ── 결과 비교 테이블 ── */
+.result-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.result-table th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid #eee;
+}
+
+.result-table td {
+  font-size: 13px;
+  color: #1a1f2e;
+  padding: 0.75rem 0.75rem;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.result-table th:nth-child(2),
+.result-table td:nth-child(2) {
+  width: 18%;
+  text-align: right;
+  padding-right: 2rem;
+}
+
+.result-table th:nth-child(3),
+.result-table td:nth-child(3) {
+  width: 18%;
+  text-align: right;
+  padding-right: 2rem;
+}
+
+.result-table th:nth-child(4),
+.result-table td:nth-child(4) {
+  width: 34%;
+  text-align: right;
+  padding-right: 1rem;
+}

@@ -1,15 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import axios from "axios";
 
 const API = "http://localhost:8000";
-
-const MODELS = [
-  { value: "gaussian_process", label: "Gaussian Process" },
-  { value: "random_forest",    label: "Random Forest" },
-  { value: "xgboost",          label: "XGBoost" },
-  { value: "mlp",              label: "MLP" },
-  { value: "static_time_gnn",  label: "StaticTimeGNN" },
-];
 
 const COMPONENTS = [
   { key: "Glucose_0",    label: "Glucose",    unit: "g/L",    default: 4.5   },
@@ -26,17 +18,46 @@ const COMPONENTS = [
 export default function PredictPage() {
   const initValues = Object.fromEntries(COMPONENTS.map(c => [c.key, c.default]));
 
-  const [model,   setModel]   = useState("gaussian_process");
+  const [availableModels, setAvailableModels] = useState([]);
+  const [modelsLoading,   setModelsLoading]   = useState(true);
+  const [model,   setModel]   = useState("");
   const [values,  setValues]  = useState(initValues);
   const [loading, setLoading] = useState(false);
   const [result,  setResult]  = useState(null);
   const [error,   setError]   = useState("");
+
+  // ── 학습된 모델만 가져오기 ──
+  useEffect(() => {
+    fetchAvailableModels();
+  }, []);
+
+  const fetchAvailableModels = async () => {
+    setModelsLoading(true);
+    try {
+      const { data } = await axios.get(`${API}/train/models`);
+      // static + static_time 그룹에서 has_model=true인 것만 추출
+      const trained = [
+        ...data.static,
+        ...data.static_time,
+      ].filter(m => m.has_model);
+
+      setAvailableModels(trained);
+      if (trained.length > 0) {
+        setModel(trained[0].id);
+      }
+    } catch (e) {
+      setError("Failed to load model list.");
+    } finally {
+      setModelsLoading(false);
+    }
+  };
 
   const handleChange = (key, val) => {
     setValues(prev => ({ ...prev, [key]: parseFloat(val) || 0 }));
   };
 
   const handlePredict = async () => {
+    if (!model) return;
     setLoading(true);
     setError("");
     setResult(null);
@@ -72,14 +93,26 @@ export default function PredictPage() {
       {/* Model select */}
       <div className="card">
         <h2>Select Model</h2>
-        <div className="form-group" style={{ maxWidth: 300 }}>
-          <label>Model</label>
-          <select value={model} onChange={e => setModel(e.target.value)}>
-            {MODELS.map(m => (
-              <option key={m.value} value={m.value}>{m.label}</option>
-            ))}
-          </select>
-        </div>
+
+        {modelsLoading ? (
+          <p style={{ color: "#888", fontSize: 13 }}>Loading available models...</p>
+        ) : availableModels.length === 0 ? (
+          <div className="status-bar status-error">
+            ❌ No trained models found. Go to Model Train and train a model first.
+          </div>
+        ) : (
+          <div className="form-group" style={{ maxWidth: 300 }}>
+            <label>Model</label>
+            <select value={model} onChange={e => setModel(e.target.value)}>
+              {availableModels.map(m => (
+                <option key={m.id} value={m.id}>
+                  {m.name} — {m.desc}
+                  {m.result?.r2 !== undefined ? `  (R² ${m.result.r2.toFixed(3)})` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       {/* Media composition inputs */}
@@ -105,7 +138,7 @@ export default function PredictPage() {
           <button
             className="btn btn-primary"
             onClick={handlePredict}
-            disabled={loading}
+            disabled={loading || !model || availableModels.length === 0}
           >
             {loading ? "Predicting..." : "Predict"}
           </button>
