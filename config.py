@@ -76,7 +76,24 @@ TF_BATCH_SIZE    = 16
 
 
 # ══════════════════════════════════════════════
-# GNN model (Model3)
+# TCN model (Temporal Convolutional Network)
+#
+# TCN은 Dilated Causal Convolution을 쌓아서 시계열을 처리.
+# LSTM과 달리 병렬 처리가 가능해 학습이 빠르고 안정적.
+# receptive field = (kernel_size - 1) * sum(dilations)
+# num_channels 리스트 길이 = 레이어 수, 각 값 = 채널(hidden) 수
+# ══════════════════════════════════════════════
+
+TCN_NUM_CHANNELS = [32, 32, 32]   # 레이어별 채널 수 (레이어 수 = len)
+TCN_KERNEL_SIZE  = 3               # conv kernel 크기
+TCN_DROPOUT      = 0.1
+TCN_EPOCHS       = 100
+TCN_LR           = 1e-3
+TCN_BATCH_SIZE   = 16
+
+
+# ══════════════════════════════════════════════
+# GNN model (StaticTimeGNN)
 # Dimensions are determined at runtime from data.py
 # ══════════════════════════════════════════════
 
@@ -107,8 +124,9 @@ def make_dirs():
         RESULTS_TT_DIR / "rnn",
         RESULTS_TT_DIR / "lstm",
         RESULTS_TT_DIR / "transformer",
+        RESULTS_TT_DIR / "tcn",              # ← 추가
         RESULTS_TT_DIR / "gnn",
-        RESULTS_TT_DIR / "static_time_gnn"
+        RESULTS_TT_DIR / "static_time_gnn",
     ]
     for d in dirs:
         d.mkdir(parents=True, exist_ok=True)
@@ -116,13 +134,16 @@ def make_dirs():
 
 
 def model_save_path(model_name: str) -> Path:
-    """Return model save path. e.g. model_save_path('gnn') → Results_Models/gnn_best.pt"""
-    ext = ".pt" if model_name in {"mlp", "rnn", "lstm", "transformer", "gnn", "static_time_gnn"} else ".pkl"
+    """Return model save path. e.g. model_save_path('tcn') → Results_Models/tcn_best.pt"""
+    ext = ".pt" if model_name in {
+        "mlp", "rnn", "lstm", "transformer", "tcn",   # ← tcn 추가
+        "gnn", "static_time_gnn"
+    } else ".pkl"
     return RESULTS_MODELS_DIR / f"{model_name}_best{ext}"
 
 
 def result_dir(model_name: str) -> Path:
-    """Return result directory. e.g. result_dir('gnn') → Results_Train_Test/gnn/"""
+    """Return result directory. e.g. result_dir('tcn') → Results_Train_Test/tcn/"""
     return RESULTS_TT_DIR / model_name
 
 
@@ -139,6 +160,12 @@ if __name__ == "__main__":
     print(f"  Model outputs   : {RESULTS_MODELS_DIR}/")
     print(f"  Results         : {RESULTS_TT_DIR}/")
 
+    print(f"\n[TCN hyperparameters]")
+    print(f"  num_channels : {TCN_NUM_CHANNELS}")
+    print(f"  kernel_size  : {TCN_KERNEL_SIZE}")
+    print(f"  epochs       : {TCN_EPOCHS}")
+    print(f"  lr           : {TCN_LR}")
+
     print(f"\n[GNN hyperparameters]")
     print(f"  d_hidden   : {GNN_D_HIDDEN}")
     print(f"  n_layers   : {GNN_N_LAYERS}")
@@ -146,5 +173,6 @@ if __name__ == "__main__":
     print(f"  lr         : {GNN_LR}")
 
     print(f"\n[Model save paths]")
-    for m in ["gp", "xgboost", "random_forest", "mlp", "rnn", "lstm", "transformer", "gnn"]:
-        print(f"  {m:<15} → {model_save_path(m)}")
+    for m in ["gaussian_process", "xgboost", "random_forest", "mlp",
+              "rnn", "lstm", "transformer", "tcn", "static_time_gnn"]:
+        print(f"  {m:<20} → {model_save_path(m)}")

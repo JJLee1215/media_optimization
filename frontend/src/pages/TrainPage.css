@@ -466,23 +466,80 @@
   border-bottom: 1px solid #f0f0f0;
 }
 
+.result-table th:nth-child(1),
+.result-table td:nth-child(1) { width: 30%; }
+
 .result-table th:nth-child(2),
-.result-table td:nth-child(2) {
-  width: 18%;
-  text-align: right;
-  padding-right: 2rem;
-}
+.result-table td:nth-child(2) { width: 18%; }
 
 .result-table th:nth-child(3),
-.result-table td:nth-child(3) {
-  width: 18%;
-  text-align: right;
-  padding-right: 2rem;
-}
+.result-table td:nth-child(3) { width: 18%; }
 
 .result-table th:nth-child(4),
-.result-table td:nth-child(4) {
-  width: 34%;
-  text-align: right;
-  padding-right: 1rem;
+.result-table td:nth-child(4) { width: 34%; }
+
+.result-table tr:last-child td { border-bottom: none; }
+
+/* ── Data Analysis 탭 ── */
+.analysis-tab-bar {
+  display: flex;
+  gap: 0.3rem;
+  border-bottom: 2px solid var(--border);
+  margin-top: 0.75rem;
+  padding-bottom: 0;
+}
+
+.analysis-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0.5rem 1rem;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: all 0.15s;
+}
+
+.analysis-tab:hover { color: var(--text-primary); }
+
+.analysis-tab.active {
+  color: #1D9E75;
+  border-bottom-color: #1D9E75;
+}
+
+/* ── 상단 stat bar ── */
+.stat-bar {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+
+.stat-bar-item {
+  flex: 1;
+  background: var(--surface-2);
+  border: 0.5px solid var(--border);
+  border-radius: 10px;
+  padding: 0.6rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.stat-bar-label {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.stat-bar-value {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
 }

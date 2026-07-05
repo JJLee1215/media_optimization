@@ -1,6 +1,6 @@
 """
 routers/train.py
-Model Train routes — SSE 로그 스트리밍 추가
+Model Train routes — SSE 로그 스트리밍 + 파일경로 파라미터화
 """
 
 import json
@@ -25,13 +25,11 @@ train_status = {
     "result"  : None,
 }
 
-# 로그 버퍼 (SSE로 전송할 줄들)
 log_buffer = []
-log_subscribers = []   # 연결된 SSE 클라이언트들
+log_subscribers = []
 
 
 def push_log(line: str):
-    """로그 한 줄을 버퍼에 추가하고 구독자에게 전송."""
     log_buffer.append(line)
     for q in log_subscribers:
         try:
@@ -41,11 +39,14 @@ def push_log(line: str):
 
 
 class TrainRequest(BaseModel):
-    model       : str  = "static"
-    use_pipeline: bool = False
+    model        : str  = "static"
+    use_pipeline : bool = False
+    static_file  : str  = None   # 업로드된 static CSV 파일명
+    ts_file      : str  = None   # 업로드된 timeseries CSV 파일명
 
 
-def run_training(model_group: str, use_pipeline: bool = False):
+def run_training(model_group: str, use_pipeline: bool = False,
+                 static_file: str = None, ts_file: str = None):
     global log_buffer
     log_buffer = []
 
@@ -55,11 +56,17 @@ def run_training(model_group: str, use_pipeline: bool = False):
 
     push_log(f"═══════════════════════════════════════")
     push_log(f"▶ Training: {model_group.upper()}  |  Pipeline: {'ON' if use_pipeline else 'OFF'}")
+    push_log(f"  Static file : {static_file or config.DATA_STATIC}")
+    push_log(f"  TS file     : {ts_file or config.DATA_TIMESERIES}")
 
     try:
         cmd = ["python", "train.py", "--model", model_group]
         if use_pipeline:
             cmd.append("--pipeline")
+        if static_file:
+            cmd += ["--static_file", static_file]
+        if ts_file:
+            cmd += ["--ts_file", ts_file]
 
         proc = subprocess.Popen(
             cmd,
@@ -70,7 +77,6 @@ def run_training(model_group: str, use_pipeline: bool = False):
             bufsize=1,
         )
 
-        # stdout 한 줄씩 실시간 전송
         for line in proc.stdout:
             line = line.rstrip()
             if line:
@@ -106,18 +112,21 @@ def train(req: TrainRequest, bg: BackgroundTasks):
     train_status["status"]  = "pending"
     train_status["message"] = "Starting..."
     train_status["result"]  = None
-    bg.add_task(run_training, req.model, req.use_pipeline)
+    bg.add_task(
+        run_training,
+        req.model,
+        req.use_pipeline,
+        req.static_file,
+        req.ts_file,
+    )
     return {"message": f"Training started: {req.model}"}
 
 
 @router.get("/stream")
 async def stream_logs():
-    """SSE 엔드포인트 — 로그를 실시간으로 스트리밍."""
-    import asyncio
     queue = asyncio.Queue()
     log_subscribers.append(queue)
 
-    # 기존 버퍼 먼저 전송
     for line in log_buffer:
         await queue.put(line)
 

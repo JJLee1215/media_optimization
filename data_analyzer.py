@@ -1,24 +1,27 @@
 """
 data_analyzer.py
-CSV file analysis tool
+Static data analysis — all outputs saved as PNG
 
-1. Read CSV file
-2. Analyze dimensions
-3. Analyze features (stats, types, missing values)
-4. Generate and save plots
-5. (Future: UI integration — file select → show dims, features, plots)
+Functions:
+  basic_stats()           → JSON  기초 통계
+  missing_analysis()      → JSON  결측치 분석
+  correlation_heatmap()   → PNG   컴포넌트 간 상관관계 히트맵
+  correlation_stats()     → PNG   Pearson/Spearman/p-value vs Titer  ★ 신규
+  distribution_plots()    → PNG   컴포넌트별 히스토그램
+  titer_correlation_plots() → PNG 컴포넌트 vs Titer 산점도
+  outlier_plots()         → PNG   아웃라이어 탐지 (IQR)              ★ 신규
+  pca_plots()             → PNG   PCA biplot + 설명분산               ★ 신규
+  timeseries_profile()    → PNG   시계열 평균 프로파일
+  run_all()               전부 실행
 
-Usage:
-  python data_analyzer.py --file data_file/batch_table_syn.csv
-  python data_analyzer.py --file data_file/timeseries_syn.csv
-  python data_analyzer.py --file data_file/batch_table_syn.csv --out outputs/analysis
+탭별 사용:
+  Overview     : basic_stats, missing_analysis
+  Correlation  : correlation_heatmap, correlation_stats
+  Distribution : distribution_plots, outlier_plots
+  Titer        : titer_correlation_plots
+  PCA          : pca_plots
+  Timeseries   : timeseries_profile
 """
-
-import argparse
-import json
-import os
-import sys
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -26,276 +29,456 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import seaborn as sns
+from pathlib import Path
+from scipy import stats
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+
+import sys
+sys.path.insert(0, str(Path(__file__).parent))
+import config
+
+RESULT_DIR = config.RESULTS_TT_DIR / "data_analysis"
+RESULT_DIR.mkdir(parents=True, exist_ok=True)
+
+MEDIA_COLS  = ["Glucose_0", "Glutamine_0", "Asparagine_0",
+               "Lactate_0", "Ammonia_0", "Cu_0", "Zn_0", "Mn_0", "Fe_0"]
+TARGET_COL  = "titer_final"
+
+COLORS = ["#1D9E75","#534AB7","#E24B4A","#EF9F27","#185FA5",
+          "#9FE1CB","#AFA9EC","#F0997B","#888780"]
 
 
 # ══════════════════════════════════════════════
-# SETTINGS
+# Helpers
 # ══════════════════════════════════════════════
 
-DEFAULT_OUT_DIR = Path("outputs/analysis")
-PLOT_DPI        = 120
-PLOT_FIGSIZE_SM = (8, 5)
-PLOT_FIGSIZE_LG = (14, 8)
+def _load(filepath: str = None) -> pd.DataFrame:
+    path = Path(filepath) if filepath else config.DATA_STATIC
+    if not path.exists():
+        raise FileNotFoundError(f"File not found: {path}")
+    return pd.read_csv(path)
+
+
+def _media_cols(df: pd.DataFrame) -> list:
+    return [c for c in MEDIA_COLS if c in df.columns]
 
 
 # ══════════════════════════════════════════════
-# 1. Read CSV
+# Overview
 # ══════════════════════════════════════════════
 
-def read_csv(file_path: str) -> pd.DataFrame:
-    path = Path(file_path)
+def basic_stats(filepath: str = None, batch_id=None) -> dict:
+    """
+    기초 통계 — mean, std, min, max, 25/50/75 percentile.
+
+    batch_id = None or "all" : 전체 배치 평균 (describe)
+    batch_id = 특정 번호     : 해당 배치의 실제 조성값 반환
+                               (static 데이터는 배치당 행이 1개이므로
+                                describe 대신 실제값을 mean 키로 반환)
+    """
+    df   = _load(filepath)
+    cols = _media_cols(df)
+
+    # ── 특정 배치 선택 ──
+    if batch_id and str(batch_id) != "all" and "Batch_ID" in df.columns:
+        row = df[df["Batch_ID"] == int(batch_id)]
+        if len(row) == 0:
+            raise ValueError(f"Batch {batch_id} not found.")
+
+        result = {}
+        all_cols = cols + ([TARGET_COL] if TARGET_COL in df.columns else [])
+        for col in all_cols:
+            if col not in row.columns:
+                continue
+            val = float(row[col].values[0])
+            result[col] = {
+                "count": 1, "mean": val, "std": 0.0,
+                "min": val, "25%": val, "50%": val,
+                "75%": val, "max": val,
+            }
+        return result
+
+    # ── 전체 평균 (All) ──
+    desc = df[cols + ([TARGET_COL] if TARGET_COL in df.columns else [])].describe()
+    return desc.round(4).to_dict()
+
+
+def missing_analysis(filepath: str = None) -> dict:
+    """결측치 개수 및 비율."""
+    df      = _load(filepath)
+    cols    = _media_cols(df)
+    missing = df[cols].isnull().sum()
+    ratio   = (missing / len(df) * 100).round(2)
+    return {
+        "missing_count": missing.to_dict(),
+        "missing_ratio": ratio.to_dict(),
+        "total_rows"   : len(df),
+    }
+
+
+# ══════════════════════════════════════════════
+# Correlation
+# ══════════════════════════════════════════════
+
+def correlation_heatmap(filepath: str = None,
+                        selected_cols: list = None,
+                        batch_id=None) -> str:
+    """컴포넌트 간 Pearson 상관관계 히트맵 → PNG."""
+    df   = _load(filepath)
+    cols = selected_cols if selected_cols else _media_cols(df)
+    if batch_id and batch_id != "all" and "Batch_ID" in df.columns:
+        df = df[df["Batch_ID"] == int(batch_id)]
+
+    corr = df[cols].corr()
+    fig, ax = plt.subplots(figsize=(9, 7))
+    sns.heatmap(corr, annot=True, fmt=".2f", cmap="RdYlGn",
+                center=0, ax=ax, linewidths=0.5,
+                annot_kws={"size": 9})
+    ax.set_title("Component correlation heatmap", fontsize=13, pad=12)
+    plt.tight_layout()
+    out = RESULT_DIR / "correlation_heatmap.png"
+    fig.savefig(out, dpi=130, bbox_inches="tight")
+    plt.close()
+    return str(out)
+
+
+def correlation_stats(filepath: str = None,
+                      selected_cols: list = None) -> str:
+    """
+    Pearson / Spearman / p-value vs Titer 테이블 → PNG.
+    ★ 신규 — XAI PCC/Spearman 사전 검증용
+    유의수준: *** p<0.001  ** p<0.01  * p<0.05  ns p≥0.05
+    """
+    df   = _load(filepath)
+    cols = selected_cols if selected_cols else _media_cols(df)
+    if TARGET_COL not in df.columns:
+        raise ValueError(f"Target column '{TARGET_COL}' not found.")
+
+    y = df[TARGET_COL].values
+    rows = []
+    for col in cols:
+        x = df[col].values
+        pr, pp = stats.pearsonr(x, y)
+        sr, sp = stats.spearmanr(x, y)
+        sig = ("***" if pp < 0.001 else
+               "**"  if pp < 0.01  else
+               "*"   if pp < 0.05  else "ns")
+        rows.append({
+            "Component": col,
+            "Pearson r" : round(pr, 3),
+            "Pearson p" : round(pp, 4),
+            "Spearman r": round(sr, 3),
+            "Spearman p": round(sp, 4),
+            "Sig."      : sig,
+        })
+
+    result_df = pd.DataFrame(rows).sort_values("Pearson r",
+                                                ascending=False,
+                                                key=abs)
+
+    # 테이블을 PNG로 렌더링
+    fig, ax = plt.subplots(figsize=(10, len(rows) * 0.55 + 1.2))
+    ax.axis("off")
+    tbl = ax.table(
+        cellText  = result_df.values,
+        colLabels = result_df.columns,
+        cellLoc   = "center",
+        loc       = "center",
+    )
+    tbl.auto_set_font_size(False)
+    tbl.set_fontsize(10)
+    tbl.scale(1, 1.5)
+
+    # 헤더 색상
+    for j in range(len(result_df.columns)):
+        tbl[0, j].set_facecolor("#1a1f2e")
+        tbl[0, j].set_text_props(color="white", fontweight="bold")
+
+    # 유의미한 행 강조 (p < 0.05)
+    for i, row in enumerate(rows):
+        if row["Sig."] in ("*", "**", "***"):
+            for j in range(len(result_df.columns)):
+                tbl[i + 1, j].set_facecolor("#E1F5EE")
+
+    ax.set_title("Correlation with Titer (Pearson / Spearman / p-value)",
+                 fontsize=12, pad=12, fontweight="bold")
+    plt.tight_layout()
+    out = RESULT_DIR / "correlation_stats.png"
+    fig.savefig(out, dpi=130, bbox_inches="tight")
+    plt.close()
+    return str(out)
+
+
+# ══════════════════════════════════════════════
+# Distribution
+# ══════════════════════════════════════════════
+
+def distribution_plots(filepath: str = None,
+                       selected_cols: list = None,
+                       batch_id=None) -> str:
+    """컴포넌트별 히스토그램 → PNG."""
+    df   = _load(filepath)
+    cols = selected_cols if selected_cols else _media_cols(df)
+    if batch_id and batch_id != "all" and "Batch_ID" in df.columns:
+        df = df[df["Batch_ID"] == int(batch_id)]
+
+    n    = len(cols)
+    ncol = 3
+    nrow = (n + ncol - 1) // ncol
+    fig, axes = plt.subplots(nrow, ncol,
+                              figsize=(ncol * 4, nrow * 3))
+    axes = axes.flatten()
+
+    for i, col in enumerate(cols):
+        axes[i].hist(df[col].dropna(), bins=15,
+                     color=COLORS[i % len(COLORS)],
+                     edgecolor="white", alpha=0.85)
+        axes[i].set_title(col, fontsize=10)
+        axes[i].set_xlabel("Value")
+        axes[i].set_ylabel("Count")
+        axes[i].grid(True, alpha=0.3)
+
+    for j in range(i + 1, len(axes)):
+        axes[j].set_visible(False)
+
+    fig.suptitle("Feature Distributions", fontsize=13, y=1.01)
+    plt.tight_layout()
+    out = RESULT_DIR / "distribution.png"
+    fig.savefig(out, dpi=130, bbox_inches="tight")
+    plt.close()
+    return str(out)
+
+
+def outlier_plots(filepath: str = None,
+                  selected_cols: list = None) -> str:
+    """
+    IQR 기반 아웃라이어 탐지 → boxplot PNG.
+    ★ 신규 — bee swarm 사전 버전
+    """
+    df   = _load(filepath)
+    cols = selected_cols if selected_cols else _media_cols(df)
+
+    fig, ax = plt.subplots(figsize=(len(cols) * 1.2 + 2, 5))
+    data = [df[c].dropna().values for c in cols]
+    bp   = ax.boxplot(data, patch_artist=True, notch=False,
+                      medianprops={"color": "white", "linewidth": 2})
+
+    for patch, color in zip(bp["boxes"], COLORS):
+        patch.set_facecolor(color)
+        patch.set_alpha(0.8)
+
+    ax.set_xticks(range(1, len(cols) + 1))
+    ax.set_xticklabels(cols, rotation=30, ha="right", fontsize=9)
+    ax.set_title("Outlier detection (IQR boxplot)", fontsize=13)
+    ax.set_ylabel("Value")
+    ax.grid(True, alpha=0.3, axis="y")
+    plt.tight_layout()
+    out = RESULT_DIR / "outlier.png"
+    fig.savefig(out, dpi=130, bbox_inches="tight")
+    plt.close()
+    return str(out)
+
+
+# ══════════════════════════════════════════════
+# Titer analysis
+# ══════════════════════════════════════════════
+
+def titer_correlation_plots(filepath: str = None,
+                             selected_cols: list = None) -> str:
+    """컴포넌트 vs Titer 산점도 (회귀선 포함) → PNG."""
+    df   = _load(filepath)
+    cols = selected_cols if selected_cols else _media_cols(df)
+    if TARGET_COL not in df.columns:
+        raise ValueError(f"Target column '{TARGET_COL}' not found.")
+
+    n    = len(cols)
+    ncol = 3
+    nrow = (n + ncol - 1) // ncol
+    fig, axes = plt.subplots(nrow, ncol,
+                              figsize=(ncol * 4, nrow * 3.5))
+    axes = axes.flatten()
+
+    for i, col in enumerate(cols):
+        x = df[col].values
+        y = df[TARGET_COL].values
+        pr, pp = stats.pearsonr(x, y)
+        axes[i].scatter(x, y, alpha=0.5, s=20,
+                        color=COLORS[i % len(COLORS)])
+        # 회귀선
+        m, b = np.polyfit(x, y, 1)
+        xs   = np.linspace(x.min(), x.max(), 100)
+        axes[i].plot(xs, m * xs + b, "r--", lw=1.2)
+        axes[i].set_xlabel(col, fontsize=9)
+        axes[i].set_ylabel("Titer (g/L)", fontsize=9)
+        sig  = ("***" if pp < 0.001 else
+                "**"  if pp < 0.01  else
+                "*"   if pp < 0.05  else "ns")
+        axes[i].set_title(f"r={pr:.2f} {sig}", fontsize=10)
+        axes[i].grid(True, alpha=0.3)
+
+    for j in range(i + 1, len(axes)):
+        axes[j].set_visible(False)
+
+    fig.suptitle("Component vs Titer", fontsize=13, y=1.01)
+    plt.tight_layout()
+    out = RESULT_DIR / "titer_correlation.png"
+    fig.savefig(out, dpi=130, bbox_inches="tight")
+    plt.close()
+    return str(out)
+
+
+# ══════════════════════════════════════════════
+# PCA
+# ══════════════════════════════════════════════
+
+def pca_plots(filepath: str = None,
+              selected_cols: list = None) -> str:
+    """
+    PCA biplot + 설명분산 bar chart → PNG.
+    ★ 신규 — feature 중요도 힌트, XAI 사전 검증용
+    """
+    df   = _load(filepath)
+    cols = selected_cols if selected_cols else _media_cols(df)
+
+    X      = df[cols].dropna().values
+    scaler = StandardScaler()
+    X_sc   = scaler.fit_transform(X)
+
+    pca    = PCA(n_components=min(len(cols), X_sc.shape[0]))
+    scores = pca.fit_transform(X_sc)
+    loads  = pca.components_
+
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+
+    # ── Biplot (PC1 vs PC2) ──
+    ax = axes[0]
+    # 색상: titer가 있으면 titer로 컬러링
+    if TARGET_COL in df.columns:
+        titer = df[cols + [TARGET_COL]].dropna()[TARGET_COL].values
+        sc = ax.scatter(scores[:, 0], scores[:, 1],
+                        c=titer, cmap="RdYlGn", alpha=0.7, s=30)
+        fig.colorbar(sc, ax=ax, label="Titer (g/L)")
+    else:
+        ax.scatter(scores[:, 0], scores[:, 1],
+                   color="#1D9E75", alpha=0.7, s=30)
+
+    # Loading vectors
+    scale = 3.0
+    for j, col in enumerate(cols):
+        ax.arrow(0, 0, loads[0, j] * scale, loads[1, j] * scale,
+                 head_width=0.08, head_length=0.05,
+                 fc="#534AB7", ec="#534AB7", alpha=0.8)
+        ax.text(loads[0, j] * scale * 1.15,
+                loads[1, j] * scale * 1.15,
+                col.replace("_0", ""), fontsize=8, color="#534AB7",
+                ha="center", va="center")
+
+    ax.axhline(0, color="gray", lw=0.5, ls="--")
+    ax.axvline(0, color="gray", lw=0.5, ls="--")
+    var1 = pca.explained_variance_ratio_[0] * 100
+    var2 = pca.explained_variance_ratio_[1] * 100
+    ax.set_xlabel(f"PC1 ({var1:.1f}%)", fontsize=10)
+    ax.set_ylabel(f"PC2 ({var2:.1f}%)", fontsize=10)
+    ax.set_title("PCA biplot", fontsize=12)
+    ax.grid(True, alpha=0.3)
+
+    # ── 설명분산 bar chart ──
+    ax2    = axes[1]
+    n_comp = min(len(cols), 9)
+    evr    = pca.explained_variance_ratio_[:n_comp] * 100
+    cumsum = np.cumsum(evr)
+    x_pos  = np.arange(1, n_comp + 1)
+
+    bars = ax2.bar(x_pos, evr, color="#1D9E75", alpha=0.8, edgecolor="white")
+    ax2.plot(x_pos, cumsum, "o-", color="#E24B4A", lw=1.5,
+             ms=5, label="Cumulative")
+    ax2.axhline(80, color="gray", lw=0.8, ls="--", alpha=0.6)
+    ax2.text(n_comp - 0.3, 81, "80%", fontsize=8, color="gray")
+    ax2.set_xlabel("Principal component", fontsize=10)
+    ax2.set_ylabel("Explained variance (%)", fontsize=10)
+    ax2.set_title("Explained variance", fontsize=12)
+    ax2.set_xticks(x_pos)
+    ax2.legend(fontsize=9)
+    ax2.grid(True, alpha=0.3, axis="y")
+
+    plt.tight_layout()
+    out = RESULT_DIR / "pca.png"
+    fig.savefig(out, dpi=130, bbox_inches="tight")
+    plt.close()
+    return str(out)
+
+
+# ══════════════════════════════════════════════
+# Timeseries
+# ══════════════════════════════════════════════
+
+def timeseries_profile(filepath: str = None) -> str:
+    """14일 평균 농도 프로파일 → PNG."""
+    path = Path(filepath) if filepath else config.DATA_TIMESERIES
     if not path.exists():
         raise FileNotFoundError(f"File not found: {path}")
 
-    df = pd.read_csv(path)
-    print(f"\n[File] {path}")
-    return df
+    df        = pd.read_csv(path)
+    time_col  = "Time (day)"
+    skip_cols = ["Batch_ID", time_col, "Fault flag", "Titer (g/L)",
+                 "Viability", "VCD"]
+    feat_cols = [c for c in df.columns if c not in skip_cols
+                 and df[c].dtype in [float, int]][:9]
+
+    mean_df = df.groupby(time_col)[feat_cols].mean()
+
+    fig, axes = plt.subplots(3, 3, figsize=(13, 9))
+    axes = axes.flatten()
+
+    for i, col in enumerate(feat_cols):
+        axes[i].plot(mean_df.index, mean_df[col],
+                     color=COLORS[i % len(COLORS)], lw=2)
+        axes[i].fill_between(mean_df.index, mean_df[col],
+                              alpha=0.15, color=COLORS[i % len(COLORS)])
+        axes[i].set_title(col, fontsize=10)
+        axes[i].set_xlabel("Day")
+        axes[i].grid(True, alpha=0.3)
+
+    for j in range(i + 1, len(axes)):
+        axes[j].set_visible(False)
+
+    fig.suptitle("14-day mean profile (timeseries)", fontsize=13)
+    plt.tight_layout()
+    out = RESULT_DIR / "timeseries_profile.png"
+    fig.savefig(out, dpi=130, bbox_inches="tight")
+    plt.close()
+    return str(out)
 
 
 # ══════════════════════════════════════════════
-# 2. Analyze dimensions
+# Run all
 # ══════════════════════════════════════════════
 
-def analyze_dimensions(df: pd.DataFrame) -> dict:
-    n_rows, n_cols = df.shape
-
-    info = {
-        "n_rows"   : n_rows,
-        "n_cols"   : n_cols,
-        "columns"  : list(df.columns),
-        "dtypes"   : {col: str(df[col].dtype) for col in df.columns},
-        "memory_mb": round(df.memory_usage(deep=True).sum() / 1024 ** 2, 4),
-    }
-
-    print(f"\n{'='*55}")
-    print(f"  Dimensions")
-    print(f"{'='*55}")
-    print(f"  Rows      : {n_rows:,}")
-    print(f"  Columns   : {n_cols}")
-    print(f"  Memory    : {info['memory_mb']} MB")
-    print(f"\n  Columns ({n_cols}):")
-    for col in df.columns:
-        print(f"    {col:<40} {str(df[col].dtype)}")
-
-    return info
-
-
-# ══════════════════════════════════════════════
-# 3. Analyze features
-# ══════════════════════════════════════════════
-
-def analyze_features(df: pd.DataFrame) -> dict:
-    numeric_cols     = df.select_dtypes(include=[np.number]).columns.tolist()
-    categorical_cols = df.select_dtypes(exclude=[np.number]).columns.tolist()
-    missing          = df.isnull().sum()
-    missing_cols     = missing[missing > 0].to_dict()
-
-    stats = df[numeric_cols].describe().round(4).to_dict()
-
-    print(f"\n{'='*55}")
-    print(f"  Feature Analysis")
-    print(f"{'='*55}")
-    print(f"  Numeric columns    : {len(numeric_cols)}")
-    print(f"  Categorical columns: {len(categorical_cols)}")
-
-    if missing_cols:
-        print(f"\n  Missing values:")
-        for col, cnt in missing_cols.items():
-            print(f"    {col:<40} {cnt} ({cnt/len(df)*100:.1f}%)")
-    else:
-        print(f"\n  Missing values: None")
-
-    print(f"\n  Numeric feature stats:")
-    print(f"  {'Column':<35} {'Min':>8} {'Max':>8} {'Mean':>8} {'Std':>8}")
-    print(f"  {'-'*67}")
-    for col in numeric_cols:
-        print(f"  {col:<35} "
-              f"{df[col].min():>8.3f} "
-              f"{df[col].max():>8.3f} "
-              f"{df[col].mean():>8.3f} "
-              f"{df[col].std():>8.3f}")
-
-    return {
-        "numeric_cols"    : numeric_cols,
-        "categorical_cols": categorical_cols,
-        "missing"         : missing_cols,
-        "stats"           : stats,
-    }
-
-
-# ══════════════════════════════════════════════
-# 4. Generate plots
-# ══════════════════════════════════════════════
-
-def generate_plots(df: pd.DataFrame, out_dir: Path, file_stem: str):
-    out_dir.mkdir(parents=True, exist_ok=True)
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    saved = []
-
-    # ── Plot 1: Distribution of each numeric feature ──
-    n = len(numeric_cols)
-    if n > 0:
-        ncols = min(4, n)
-        nrows = (n + ncols - 1) // ncols
-        fig, axes = plt.subplots(nrows, ncols,
-                                 figsize=(ncols * 3.5, nrows * 3))
-        axes = np.array(axes).flatten()
-
-        for i, col in enumerate(numeric_cols):
-            axes[i].hist(df[col].dropna(), bins=20,
-                         color="#1D9E75", edgecolor="white", alpha=0.8)
-            axes[i].set_title(col, fontsize=9)
-            axes[i].set_xlabel("Value", fontsize=8)
-            axes[i].set_ylabel("Count", fontsize=8)
-            axes[i].tick_params(labelsize=7)
-
-        for j in range(i + 1, len(axes)):
-            axes[j].set_visible(False)
-
-        plt.suptitle(f"Feature Distributions — {file_stem}",
-                     fontsize=12, fontweight="bold", y=1.01)
-        plt.tight_layout()
-        path = out_dir / f"{file_stem}_distributions.png"
-        plt.savefig(path, dpi=PLOT_DPI, bbox_inches="tight")
-        plt.close()
-        saved.append(path)
-        print(f"  Saved: {path}")
-
-    # ── Plot 2: Correlation heatmap ──
-    if n > 1:
-        corr = df[numeric_cols].corr()
-        fig_h = max(6, n * 0.5)
-        fig, ax = plt.subplots(figsize=(fig_h + 2, fig_h))
-        sns.heatmap(corr, ax=ax, cmap="RdYlGn", center=0,
-                    vmin=-1, vmax=1, annot=(n <= 15),
-                    fmt=".2f", linewidths=0.4,
-                    cbar_kws={"label": "Correlation"})
-        ax.set_title(f"Correlation Heatmap — {file_stem}",
-                     fontsize=12, fontweight="bold", pad=10)
-        ax.tick_params(axis="x", rotation=45, labelsize=8)
-        ax.tick_params(axis="y", rotation=0,  labelsize=8)
-        plt.tight_layout()
-        path = out_dir / f"{file_stem}_correlation.png"
-        plt.savefig(path, dpi=PLOT_DPI, bbox_inches="tight")
-        plt.close()
-        saved.append(path)
-        print(f"  Saved: {path}")
-
-    # ── Plot 3: Time series plot (if time column detected) ──
-    time_col = next(
-        (c for c in df.columns if "time" in c.lower() or "day" in c.lower()), None
-    )
-    batch_col = next(
-        (c for c in df.columns if "batch" in c.lower()), None
-    )
-
-    if time_col and batch_col:
-        # Pick up to 5 random batches to plot
-        batches = df[batch_col].unique()
-        sample_batches = batches[:min(5, len(batches))]
-
-        # Pick up to 6 numeric features (exclude batch/time/fault cols)
-        skip = {batch_col.lower(), time_col.lower(), "fault flag", "fault_flag"}
-        plot_cols = [c for c in numeric_cols
-                     if c.lower() not in skip][:6]
-
-        if plot_cols:
-            ncols = min(3, len(plot_cols))
-            nrows = (len(plot_cols) + ncols - 1) // ncols
-            fig, axes = plt.subplots(nrows, ncols,
-                                     figsize=(ncols * 4.5, nrows * 3.5))
-            axes = np.array(axes).flatten()
-
-            colors = ["#1D9E75", "#534AB7", "#E24B4A",
-                      "#BA7517", "#0F6E56", "#7F77DD"]
-
-            for i, col in enumerate(plot_cols):
-                for j, bid in enumerate(sample_batches):
-                    batch_df = df[df[batch_col] == bid].sort_values(time_col)
-                    axes[i].plot(batch_df[time_col], batch_df[col],
-                                 color=colors[j % len(colors)],
-                                 alpha=0.7, linewidth=1.2,
-                                 label=f"Batch {bid}")
-                axes[i].set_title(col, fontsize=9)
-                axes[i].set_xlabel(time_col, fontsize=8)
-                axes[i].tick_params(labelsize=7)
-                if i == 0:
-                    axes[i].legend(fontsize=7)
-
-            for j in range(i + 1, len(axes)):
-                axes[j].set_visible(False)
-
-            plt.suptitle(f"Time Series — {file_stem} (sample batches)",
-                         fontsize=12, fontweight="bold", y=1.01)
-            plt.tight_layout()
-            path = out_dir / f"{file_stem}_timeseries.png"
-            plt.savefig(path, dpi=PLOT_DPI, bbox_inches="tight")
-            plt.close()
-            saved.append(path)
-            print(f"  Saved: {path}")
-
-    return [str(p) for p in saved]
-
-
-# ══════════════════════════════════════════════
-# Main
-# ══════════════════════════════════════════════
-
-def analyze(file_path: str, out_dir: str = None) -> dict:
-    """
-    Full analysis pipeline.
-    Returns summary dict (for future UI integration).
-    """
-    out_path  = Path(out_dir) if out_dir else DEFAULT_OUT_DIR
-    file_stem = Path(file_path).stem
-
-    # 1. Read
-    df = read_csv(file_path)
-
-    # 2. Dimensions
-    dim_info = analyze_dimensions(df)
-
-    # 3. Features
-    feat_info = analyze_features(df)
-
-    # 4. Plots
-    print(f"\n{'='*55}")
-    print(f"  Generating plots → {out_path}/")
-    print(f"{'='*55}")
-    plots = generate_plots(df, out_path, file_stem)
-
-    # 5. Save summary JSON
-    summary = {
-        "file"      : str(file_path),
-        "dimensions": dim_info,
-        "features"  : {
-            "numeric_cols"    : feat_info["numeric_cols"],
-            "categorical_cols": feat_info["categorical_cols"],
-            "missing"         : feat_info["missing"],
-        },
-        "plots"     : plots,
-    }
-
-    json_path = out_path / f"{file_stem}_summary.json"
-    out_path.mkdir(parents=True, exist_ok=True)
-    with open(json_path, "w") as f:
-        json.dump(summary, f, indent=2)
-    print(f"  Saved: {json_path}")
-
-    print(f"\n{'='*55}")
-    print(f"  Analysis complete.")
-    print(f"  Output: {out_path}/")
-    print(f"{'='*55}")
-
-    return summary
+def run_all(filepath: str = None) -> dict:
+    results = {}
+    fns = [
+        ("basic_stats",              lambda: basic_stats(filepath)),
+        ("missing_analysis",         lambda: missing_analysis(filepath)),
+        ("correlation_heatmap",      lambda: correlation_heatmap(filepath)),
+        ("correlation_stats",        lambda: correlation_stats(filepath)),
+        ("distribution_plots",       lambda: distribution_plots(filepath)),
+        ("outlier_plots",            lambda: outlier_plots(filepath)),
+        ("titer_correlation_plots",  lambda: titer_correlation_plots(filepath)),
+        ("pca_plots",                lambda: pca_plots(filepath)),
+        ("timeseries_profile",       lambda: timeseries_profile()),
+    ]
+    for name, fn in fns:
+        try:
+            results[name] = fn()
+            print(f"  [{name}] done")
+        except Exception as e:
+            results[name] = f"error: {e}"
+            print(f"  [{name}] error: {e}")
+    return results
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="CSV Data Analyzer")
-    parser.add_argument("--file", type=str, required=True,
-                        help="Path to CSV file")
-    parser.add_argument("--out",  type=str, default=None,
-                        help="Output directory for plots and summary")
-    args = parser.parse_args()
-
-    analyze(args.file, args.out)
+    print("Running all analyses...")
+    run_all()
+    print("Done →", RESULT_DIR)

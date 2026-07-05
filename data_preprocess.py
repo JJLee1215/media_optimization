@@ -5,10 +5,18 @@ Data loading and preprocessing
 Functions:
   get_static_data()      GP, XGBoost, RandomForest, MLP
   get_timeseries_data()  RNN, LSTM, Transformer
+
+※ 파일 경로 처리 방식:
+  static_file / ts_file 파라미터로 파일명을 받아
+  config.DATA_DIR / {파일명} 경로로 읽음.
+  파라미터가 없으면 config.DATA_STATIC / config.DATA_TIMESERIES 기본값 사용.
+  → UI에서 업로드한 파일명을 train.py → data_preprocess.py로 전달하면
+    하드코딩 없이 어떤 CSV든 사용 가능.
 """
 
 import numpy as np
 import pandas as pd
+from pathlib import Path
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 import torch
@@ -28,19 +36,16 @@ def get_pipeline() -> MediaPipeline:
     return _pipeline
 
 
-def get_static_data(use_pipeline: bool = True):
+def get_static_data(use_pipeline: bool = False, static_file: str = None):
     """
     Load and preprocess static data for GP, XGBoost, RandomForest, MLP.
 
-    Source : config.DATA_STATIC (batch_table_syn.csv)
+    static_file  : 파일명 (예: "batch_table_syn.csv")
+                   None이면 config.DATA_STATIC 기본값 사용
+                   UI에서 업로드한 파일명을 전달하면 해당 파일로 학습
 
-    use_pipeline=True  (기본값)
-      Input  : initial media composition (9 features)
-      Output : media representation vector (VECTOR_DIM features)
-               heterogeneity 처리 완료, 새 컴포넌트 일반화 가능
-
-    use_pipeline=False
-      기존 동작 유지 (9 features 그대로)
+    use_pipeline : True → 9 → 230차원 heterogeneity pipeline 적용
+                   False → 9 features 그대로 (기본값)
 
     Returns:
         X_train  (n_train, VECTOR_DIM) or (n_train, 9)
@@ -50,7 +55,16 @@ def get_static_data(use_pipeline: bool = True):
         x_cols   list of feature names
         scaler   fitted StandardScaler
     """
-    df = pd.read_csv(config.DATA_STATIC)
+    # ── 파일 경로 결정 ──
+    if static_file:
+        file_path = config.DATA_DIR / static_file
+    else:
+        file_path = config.DATA_STATIC   # 기본값: data_file/batch_table_syn.csv
+
+    if not Path(file_path).exists():
+        raise FileNotFoundError(f"Static file not found: {file_path}")
+
+    df = pd.read_csv(file_path)
 
     drop_cols = ["Batch_ID", "titer_final", "viab_final"]
     x_cols    = [c for c in df.columns if c not in drop_cols]
@@ -58,7 +72,7 @@ def get_static_data(use_pipeline: bool = True):
     X = df[x_cols].values.astype(np.float32)
     y = df["titer_final"].values.astype(np.float32)
 
-    print(f"[preprocess] Loaded: {config.DATA_STATIC}")
+    print(f"[preprocess] Loaded: {file_path}")
     print(f"  Raw X: {X.shape}  y: {y.shape}")
     print(f"  Features: {x_cols}")
 
@@ -84,17 +98,15 @@ def get_static_data(use_pipeline: bool = True):
     return X_train, X_test, y_train, y_test, x_cols, scaler
 
 
-def get_timeseries_data(batch_size=None):
+def get_timeseries_data(batch_size=None, ts_file: str = None):
     """
     Load and preprocess time series data for RNN, LSTM, Transformer.
 
-    Source : config.DATA_TIMESERIES (timeseries_syn.csv)
+    ts_file  : 파일명 (예: "timeseries_syn.csv")
+               None이면 config.DATA_TIMESERIES 기본값 사용
+               UI에서 업로드한 파일명을 전달하면 해당 파일로 학습
 
-    Input  : X (n_batches, T, d_dynamic)
-    Target : y (n_batches,)   titer at last time step
-
-    ※ 시계열 pipeline 적용은 추후 고려
-       현재는 기존 동작 유지
+    ※ 시계열 pipeline 적용은 추후 고려, 현재는 기존 동작 유지
 
     Returns:
         loaders      {"train": DataLoader, "val": DataLoader}
@@ -107,7 +119,16 @@ def get_timeseries_data(batch_size=None):
     if batch_size is None:
         batch_size = config.RNN_BATCH_SIZE
 
-    df = pd.read_csv(config.DATA_TIMESERIES)
+    # ── 파일 경로 결정 ──
+    if ts_file:
+        file_path = config.DATA_DIR / ts_file
+    else:
+        file_path = config.DATA_TIMESERIES   # 기본값: data_file/timeseries_syn.csv
+
+    if not Path(file_path).exists():
+        raise FileNotFoundError(f"Timeseries file not found: {file_path}")
+
+    df = pd.read_csv(file_path)
 
     if "Fault flag" in df.columns:
         df = df[df["Fault flag"] == 0]
@@ -132,7 +153,7 @@ def get_timeseries_data(batch_size=None):
     X = np.array([x[:T] for x in X_list], dtype=np.float32)
     y = np.array(y_list, dtype=np.float32)
 
-    print(f"[preprocess] Loaded: {config.DATA_TIMESERIES}")
+    print(f"[preprocess] Loaded: {file_path}")
     print(f"  X: {X.shape}  (n_batches, T, d_dynamic)")
     print(f"  y: {y.shape}")
 
@@ -169,12 +190,12 @@ def get_timeseries_data(batch_size=None):
 
 if __name__ == "__main__":
     print("=" * 55)
-    print("[1] Static data (pipeline=True)")
-    X_train, X_test, y_train, y_test, x_cols, scaler = get_static_data(use_pipeline=True)
+    print("[1] Static data (pipeline=False, 기본값)")
+    X_train, X_test, y_train, y_test, x_cols, scaler = get_static_data()
     print(f"  X_train: {X_train.shape}  X_test: {X_test.shape}")
 
-    print("\n[2] Static data (pipeline=False, 기존 동작)")
-    X_train2, X_test2, _, _, _, _ = get_static_data(use_pipeline=False)
+    print("\n[2] Static data (pipeline=True)")
+    X_train2, X_test2, _, _, _, _ = get_static_data(use_pipeline=True)
     print(f"  X_train: {X_train2.shape}  X_test: {X_test2.shape}")
 
     print("\n[3] Timeseries data")

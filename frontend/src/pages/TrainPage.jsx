@@ -187,7 +187,12 @@ export default function TrainPage() {
     };
 
     for (const modelId of selected) {
-      await axios.post(`${API}/train`, { model: modelId, use_pipeline: usePipeline });
+      await axios.post(`${API}/train`, {
+        model        : modelId,
+        use_pipeline : usePipeline,
+        static_file  : staticFile  || null,   // 업로드된 static 파일명
+        ts_file      : tsFile      || null,   // 업로드된 timeseries 파일명
+      });
     }
   };
 

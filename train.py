@@ -3,12 +3,11 @@ train.py
 Model training entry point
 
 Usage:
-  python train.py --model all                    train all models (pipeline off)
-  python train.py --model static                 GP, RandomForest, XGBoost, MLP
-  python train.py --model static --pipeline      with media pipeline (heterogeneity)
-  python train.py --model time                   RNN, LSTM, Transformer
-  python train.py --model static_time            StaticTimeGNN
-  python train.py --model gaussian_process       single model
+  python train.py --model static
+  python train.py --model static --pipeline
+  python train.py --model static --static_file my_batch.csv
+  python train.py --model time --ts_file my_timeseries.csv
+  python train.py --model all --static_file batch.csv --ts_file ts.csv
 """
 
 import sys
@@ -26,7 +25,7 @@ from data_preprocess import get_static_data, get_timeseries_data
 from compare import collect_results, print_table, plot_comparison
 
 STATIC_MODELS      = ["gaussian_process", "random_forest", "xgboost", "mlp"]
-TIME_MODELS        = ["rnn", "lstm", "transformer"]
+TIME_MODELS        = ["rnn", "lstm", "transformer", "tcn"]
 STATIC_TIME_MODELS = ["static_time_gnn"]
 ALL_MODELS         = STATIC_MODELS + TIME_MODELS + STATIC_TIME_MODELS
 
@@ -60,20 +59,23 @@ def get_model(model_name):
     elif model_name == "transformer":
         from Models.transformer import TransformerModel
         return TransformerModel()
+    elif model_name == "tcn":
+        from Models.tcn import TCNModel
+        return TCNModel()
     else:
         raise ValueError(f"Unknown model: {model_name}")
 
 
-def train_static(model_name, use_pipeline=False):
+def train_static(model_name, use_pipeline=False, static_file=None):
     """
-    Static 모델(GP/XGBoost/RF/MLP) 학습.
-
-    use_pipeline : True면 heterogeneity pipeline(SMILES·RDKit·GEM)을 거쳐
-                   9 → 230차원으로 변환된 데이터로 학습.
-                   이 값은 model.save(use_pipeline=...)로 그대로 전달되어
-                   pkl/pt 파일에 함께 저장됨 → predict.py가 동일하게 재현 가능.
+    static_file : 파일명 (예: "my_batch.csv")
+                  None이면 config.DATA_STATIC 기본값 사용
+    use_pipeline : heterogeneity pipeline 적용 여부
     """
-    X_train, X_test, y_train, y_test, x_cols, scaler = get_static_data(use_pipeline=use_pipeline)
+    X_train, X_test, y_train, y_test, x_cols, scaler = get_static_data(
+        use_pipeline=use_pipeline,
+        static_file=static_file,
+    )
     model = get_model(model_name)
     model.train(X_train, y_train, x_cols=x_cols, scaler=scaler)
     result = model.evaluate(X_test, y_test)
@@ -81,15 +83,18 @@ def train_static(model_name, use_pipeline=False):
         model.feature_importance()
     if hasattr(model, "cross_validate"):
         model.cross_validate(X_train, y_train)
-    # ── use_pipeline 정보를 모델 저장 파일에 함께 기록 ──
-    # predict.py가 load() 후 saved["use_pipeline"]을 읽어서
-    # 예측 시 동일한 전처리(9→230 변환)를 자동으로 재현하기 위함
     model.save(use_pipeline=use_pipeline)
     return result
 
 
-def train_time(model_name):
-    loaders, x_sc, y_sc, X_test, y_test, feat_cols = get_timeseries_data()
+def train_time(model_name, ts_file=None):
+    """
+    ts_file : 파일명 (예: "my_timeseries.csv")
+              None이면 config.DATA_TIMESERIES 기본값 사용
+    """
+    loaders, x_sc, y_sc, X_test, y_test, feat_cols = get_timeseries_data(
+        ts_file=ts_file,
+    )
     model = get_model(model_name)
     model.train(loaders, y_sc)
     result = model.evaluate(X_test, y_test)
@@ -97,38 +102,47 @@ def train_time(model_name):
     return result
 
 
-def train_static_time(use_pipeline=False):
+def train_static_time(use_pipeline=False, static_file=None, ts_file=None):
     """
     StaticTimeGNN — uses both static and timeseries data.
 
+    static_file : 정적 배지 데이터 파일명 (None이면 기본값)
+    ts_file     : 시계열 데이터 파일명 (None이면 기본값)
+
     ※ StaticTimeGNN의 save()는 현재 state_dict만 저장하는 구조라
-       use_pipeline 메타정보를 함께 기록하지 못함.
-       추후 save() 구조를 dict 래핑 방식으로 변경할 예정 (보류 중).
+       use_pipeline 메타정보를 함께 기록하지 못함 (보류 중).
     """
     from torch.utils.data import Dataset, DataLoader, random_split
     from Models.StaticTimeGNN import StaticTimeGNNModel
     import pandas as pd
 
-    df_static  = pd.read_csv(config.DATA_STATIC)
-    df_dynamic = pd.read_csv(config.DATA_TIMESERIES)
+    # ── 파일 경로 결정 ──
+    static_path = config.DATA_DIR / static_file if static_file else config.DATA_STATIC
+    ts_path     = config.DATA_DIR / ts_file     if ts_file     else config.DATA_TIMESERIES
+
+    if not Path(static_path).exists():
+        raise FileNotFoundError(f"Static file not found: {static_path}")
+    if not Path(ts_path).exists():
+        raise FileNotFoundError(f"Timeseries file not found: {ts_path}")
+
+    df_static  = pd.read_csv(static_path)
+    df_dynamic = pd.read_csv(ts_path)
 
     drop_cols   = ["Batch_ID", "titer_final", "viab_final"]
     static_cols = [c for c in df_static.columns if c not in drop_cols]
 
     m_static_np = df_static[static_cols].values.astype(np.float32)
 
-    # ── pipeline 적용 (m_static에만) ──────────────
     if use_pipeline:
         from heterogeneity.smile_gem_pipe import MediaPipeline
         pipeline    = MediaPipeline()
         m_static_np = pipeline.transform(m_static_np, static_cols)
-        print(f"[train_static_time] pipeline applied: m_static {df_static[static_cols].shape} → {m_static_np.shape}")
+        print(f"[train_static_time] pipeline applied: {df_static[static_cols].shape} → {m_static_np.shape}")
 
     m_static = torch.tensor(m_static_np, dtype=torch.float32)
     y_titer  = torch.tensor(df_static["titer_final"].values, dtype=torch.float32)
     y_viab   = torch.tensor(df_static["viab_final"].values,  dtype=torch.float32)
 
-    # Time series (pipeline 미적용)
     batch_col  = "Batch_ID"
     time_col   = "Time (day)"
     target_col = "Titer (g/L)"
@@ -141,9 +155,7 @@ def train_static_time(use_pipeline=False):
         X_list.append(grp[feat_cols].values)
 
     T = min(len(x) for x in X_list)
-    X_dynamic = torch.tensor(
-        np.array([x[:T] for x in X_list], dtype=np.float32)
-    )
+    X_dynamic = torch.tensor(np.array([x[:T] for x in X_list], dtype=np.float32))
 
     class GNNDataset(Dataset):
         def __init__(self, m, X, yt, yv):
@@ -181,30 +193,32 @@ def train_static_time(use_pipeline=False):
     for i in range(N): A0[i, i] = 1.0
 
     model = StaticTimeGNNModel(
-        d_static  = m_static.shape[1],   # pipeline 켜면 230, 끄면 9 자동 반영
+        d_static  = m_static.shape[1],
         d_dynamic = X_dynamic.shape[2],
         N         = N,
         A0        = A0,
     )
     model.train(train_loader, val_loader)
     result = model.evaluate(train_loader, val_loader)
-    model.save()   # ※ use_pipeline 미반영 (보류 중)
+    model.save()
     return result
 
 
-def train_model(model_name, use_pipeline=False):
+def train_model(model_name, use_pipeline=False, static_file=None, ts_file=None):
     config.make_dirs()
     print(f"\n{'='*55}")
-    print(f"  Training: {model_name.upper()}")
-    print(f"  Pipeline: {'ON' if use_pipeline else 'OFF'}")
+    print(f"  Training    : {model_name.upper()}")
+    print(f"  Pipeline    : {'ON' if use_pipeline else 'OFF'}")
+    print(f"  Static file : {static_file or config.DATA_STATIC}")
+    print(f"  TS file     : {ts_file or config.DATA_TIMESERIES}")
     print(f"{'='*55}")
 
     if model_name in STATIC_MODELS:
-        result = train_static(model_name, use_pipeline=use_pipeline)
+        result = train_static(model_name, use_pipeline=use_pipeline, static_file=static_file)
     elif model_name in TIME_MODELS:
-        result = train_time(model_name)
+        result = train_time(model_name, ts_file=ts_file)
     elif model_name == "static_time_gnn":
-        result = train_static_time(use_pipeline=use_pipeline)
+        result = train_static_time(use_pipeline=use_pipeline, static_file=static_file, ts_file=ts_file)
     else:
         raise ValueError(f"Unknown model: {model_name}")
 
@@ -216,13 +230,18 @@ def train_model(model_name, use_pipeline=False):
     return result
 
 
-def train_group(group: str, use_pipeline=False):
+def train_group(group: str, use_pipeline=False, static_file=None, ts_file=None):
     models  = MODEL_GROUPS[group]
     results = {}
 
     for name in models:
         try:
-            results[name] = train_model(name, use_pipeline=use_pipeline)
+            results[name] = train_model(
+                name,
+                use_pipeline=use_pipeline,
+                static_file=static_file,
+                ts_file=ts_file,
+            )
         except Exception as e:
             print(f"\n[{name}] Error: {e}")
             results[name] = {"error": str(e)}
@@ -237,15 +256,32 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model", type=str, required=True,
         choices=list(MODEL_GROUPS.keys()) + ALL_MODELS,
-        help="Model or group to train",
     )
     parser.add_argument(
         "--pipeline", action="store_true", default=False,
-        help="Enable media pipeline — heterogeneity processing (static/static_time only)",
+        help="Enable heterogeneity pipeline (static/static_time only)",
+    )
+    parser.add_argument(
+        "--static_file", type=str, default=None,
+        help="Static CSV filename in data_file/ (default: batch_table_syn.csv)",
+    )
+    parser.add_argument(
+        "--ts_file", type=str, default=None,
+        help="Timeseries CSV filename in data_file/ (default: timeseries_syn.csv)",
     )
     args = parser.parse_args()
 
     if args.model in MODEL_GROUPS:
-        train_group(args.model, use_pipeline=args.pipeline)
+        train_group(
+            args.model,
+            use_pipeline=args.pipeline,
+            static_file=args.static_file,
+            ts_file=args.ts_file,
+        )
     else:
-        train_model(args.model, use_pipeline=args.pipeline)
+        train_model(
+            args.model,
+            use_pipeline=args.pipeline,
+            static_file=args.static_file,
+            ts_file=args.ts_file,
+        )

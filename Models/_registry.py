@@ -1,5 +1,5 @@
 """
-Models/registry.py
+Models/_registry.py
 Model registry — single source of truth for all available models.
 
 To add a new model:
@@ -59,6 +59,14 @@ MODEL_REGISTRY = [
         "name"   : "Transformer",
         "desc"   : "Attention-based",
         "icon"   : "⚙️",
+        "section": "timeseries",
+    },
+    # ── TCN: LSTM/RNN보다 학습 빠르고 안정적 ─────────
+    {
+        "id"     : "tcn",
+        "name"   : "TCN",
+        "desc"   : "Temporal Conv Network",
+        "icon"   : "🌊",
         "section": "timeseries",
     },
 
