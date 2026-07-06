@@ -28,6 +28,10 @@ from data_analyzer import (
     titer_correlation_plots,
     pca_plots,
     timeseries_profile,
+    batch_overlay,
+    titer_trajectory,
+    ts_correlation,
+    fault_detection,
 )
 
 router = APIRouter(prefix="/data", tags=["Data"])
@@ -237,6 +241,14 @@ def analyze_timeseries(
     try:
         if type == "profile":
             out = timeseries_profile(str(file_path))
+        elif type == "batch_overlay":
+            out = batch_overlay(str(file_path))
+        elif type == "titer_trajectory":
+            out = titer_trajectory(str(file_path))
+        elif type == "ts_correlation":
+            out = ts_correlation(str(file_path))
+        elif type == "fault_detection":
+            out = fault_detection(str(file_path))
         else:
             raise HTTPException(status_code=400, detail=f"Unknown type: {type}")
 

@@ -543,3 +543,218 @@
   font-weight: 600;
   color: var(--text-primary);
 }
+
+/* ── 메인 그리드 ── */
+.train-main-grid {
+  display: grid;
+  grid-template-columns: 1fr 260px;
+  gap: 0.75rem;
+  align-items: start;
+}
+
+.train-left  { display: flex; flex-direction: column; gap: 0.75rem; }
+.train-right { position: sticky; top: 1rem; }
+
+/* ── 섹션 ── */
+.train-section {
+  background: var(--surface-2);
+  border: 0.5px solid var(--border);
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+}
+
+.train-section-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid var(--border);
+}
+
+/* 섹션별 구분선 색상 */
+.train-section-head.feat   { border-bottom-color: #999; }
+.train-section-head.het    { border-bottom-color: #EF9F27; }
+.train-section-head.static { border-bottom-color: #1D9E75; }
+.train-section-head.ts     { border-bottom-color: #534AB7; }
+.train-section-head.st     { border-bottom-color: #E24B4A; }
+
+.train-section-num {
+  font-size: 10px;
+  background: #1a1f2e;
+  color: #1D9E75;
+  border-radius: 10px;
+  padding: 1px 7px;
+  font-weight: 600;
+}
+
+.train-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.feat-count-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: #666;
+  background: #F0F0F0;
+  border-radius: 10px;
+  padding: 1px 8px;
+  border: 0.5px solid #ccc;
+}
+
+/* ── Feature 태그 ── */
+.feat-tag-area {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.feat-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  border: 0.5px solid var(--border);
+  font-size: 11px;
+  cursor: pointer;
+  background: var(--surface-1);
+  color: var(--text-muted);
+  transition: all 0.15s;
+  user-select: none;
+}
+
+.feat-tag.on {
+  background: #F0F0F0;
+  color: #444;
+  border-color: #ccc;
+}
+
+/* Heterogeneity 카드 선택 → 골드 계열 */
+.model-card.gray.selected,
+.model-card.selected.gray {
+  border-color: #EF9F27;
+  background: #FFF8E1;
+}
+
+.model-check.gray { color: #8B6914; }
+
+/* Summary Features → 회색 */
+.feat-block       { background: #F8F8F8; }
+.sum-feat-count   { font-size: 11px; font-weight: 700; color: #666; }
+.sum-feat-tag     { font-size: 10px; padding: 1px 7px; border-radius: 8px;
+                    background: #F0F0F0; color: #444; font-weight: 500;
+                    border: 0.5px solid #ccc; }
+
+/* Summary Heterogeneity → 골드 */
+.het-block        { background: #FFFBF0; }
+.sum-het-val      { font-size: 12px; font-weight: 600; color: #8B6914; }
+
+/* ── Summary 블록 합체 ── */
+.summary-wrap {
+  border-radius: 12px;
+  overflow: hidden;
+  border: 0.5px solid var(--border-strong);
+}
+
+.sum-block {
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-bottom: 0.5px solid var(--border);
+}
+.sum-block:last-child { border-bottom: none; }
+
+.sum-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sum-block-label {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.sum-feat-count {
+  font-size: 11px;
+  font-weight: 700;
+  color: #1D9E75;
+}
+
+.feat-block  { background: #F0FAF6; }
+.het-block   { background: #F4F4F4; }
+.dim-block   { background: #EEF2FF; }
+.model-block { background: #FAFAFA; }
+.run-block   { background: #1D9E75; padding: 0; border-bottom: none; }
+
+.sum-feat-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.sum-feat-tag {
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: 8px;
+  background: #1a1f2e;
+  color: #1D9E75;
+  font-weight: 500;
+}
+
+.sum-het-val {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.sum-dim-val {
+  font-size: 24px;
+  font-weight: 700;
+  color: #534AB7;
+  line-height: 1;
+}
+
+.sum-dim-sub {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.sum-model-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.sum-model-tag {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 500;
+}
+
+.sum-model-s  { background: #E1F5EE; color: #0F6E56; }
+.sum-model-ts { background: #EEEDFE; color: #3C3489; }
+
+.sum-run-btn {
+  width: 100%;
+  padding: 0.85rem;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  background: #1D9E75;
+  border: none;
+  cursor: pointer;
+  letter-spacing: 0.02em;
+  transition: background 0.15s;
+}
+
+.sum-run-btn:hover    { background: #0F6E56; }
+.sum-run-btn:disabled { opacity: 0.5; cursor: not-allowed; }

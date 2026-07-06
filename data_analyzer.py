@@ -482,3 +482,231 @@ if __name__ == "__main__":
     print("Running all analyses...")
     run_all()
     print("Done →", RESULT_DIR)
+
+
+# ══════════════════════════════════════════════
+# Timeseries 전용 분석 (신규)
+# ══════════════════════════════════════════════
+
+def batch_overlay(filepath: str = None) -> str:
+    """
+    배치별 시계열 오버레이 — 각 배치의 주요 성분 농도 변화를 겹쳐서 시각화.
+    배치 간 변동성 파악용.
+    ★ 신규
+    """
+    path = Path(filepath) if filepath else config.DATA_TIMESERIES
+    df   = pd.read_csv(path)
+
+    if "Fault flag" in df.columns:
+        df = df[df["Fault flag"] == 0]
+
+    batch_col = "Batch_ID"
+    time_col  = "Time (day)"
+    plot_cols = ["Glucose_conc", "Glutamine_conc", "Asparagine_conc",
+                 "Lactate_conc", "Ammonia_conc"]
+    plot_cols = [c for c in plot_cols if c in df.columns][:4]
+
+    n    = len(plot_cols)
+    fig, axes = plt.subplots(1, n, figsize=(n * 4, 4))
+    if n == 1:
+        axes = [axes]
+
+    batches = sorted(df[batch_col].unique())
+
+    for i, col in enumerate(plot_cols):
+        for bid in batches:
+            grp = df[df[batch_col] == bid].sort_values(time_col)
+            axes[i].plot(grp[time_col], grp[col],
+                         alpha=0.2, lw=0.8, color=COLORS[i % len(COLORS)])
+        # 평균선
+        mean_df = df.groupby(time_col)[col].mean()
+        axes[i].plot(mean_df.index, mean_df.values,
+                     color=COLORS[i % len(COLORS)], lw=2.5, label="Mean")
+        axes[i].set_title(col.replace("_conc", ""), fontsize=11)
+        axes[i].set_xlabel("Day")
+        axes[i].grid(True, alpha=0.3)
+        axes[i].legend(fontsize=8)
+
+    fig.suptitle("Batch overlay (all batches + mean)", fontsize=13)
+    plt.tight_layout()
+    out = RESULT_DIR / "batch_overlay.png"
+    fig.savefig(out, dpi=130, bbox_inches="tight")
+    plt.close()
+    return str(out)
+
+
+def titer_trajectory(filepath: str = None) -> str:
+    """
+    Titer trajectory — 배치별 titer 시간 변화.
+    최종 titer 기준으로 상위/하위 배치 구분해서 시각화.
+    ★ 신규
+    """
+    path = Path(filepath) if filepath else config.DATA_TIMESERIES
+    df   = pd.read_csv(path)
+
+    batch_col  = "Batch_ID"
+    time_col   = "Time (day)"
+    titer_col  = "Titer (g/L)"
+
+    if titer_col not in df.columns:
+        raise ValueError(f"'{titer_col}' column not found.")
+
+    # 최종 titer 계산
+    final_titer = (
+        df[df[titer_col] > 0]
+        .groupby(batch_col)[titer_col]
+        .last()
+        .sort_values(ascending=False)
+    )
+    top_n    = 10
+    top_ids  = final_titer.index[:top_n].tolist()
+    bot_ids  = final_titer.index[-top_n:].tolist()
+
+    fig, ax = plt.subplots(figsize=(11, 5))
+
+    for bid in df[batch_col].unique():
+        grp = df[df[batch_col] == bid].sort_values(time_col)
+        if bid in top_ids:
+            ax.plot(grp[time_col], grp[titer_col],
+                    color="#1D9E75", alpha=0.6, lw=1.2)
+        elif bid in bot_ids:
+            ax.plot(grp[time_col], grp[titer_col],
+                    color="#E24B4A", alpha=0.6, lw=1.2)
+        else:
+            ax.plot(grp[time_col], grp[titer_col],
+                    color="#888780", alpha=0.15, lw=0.8)
+
+    # 범례용 더미
+    from matplotlib.lines import Line2D
+    legend_elements = [
+        Line2D([0], [0], color="#1D9E75", lw=2, label=f"Top {top_n} titer"),
+        Line2D([0], [0], color="#E24B4A", lw=2, label=f"Bottom {top_n} titer"),
+        Line2D([0], [0], color="#888780", lw=1, alpha=0.5, label="Others"),
+    ]
+    ax.legend(handles=legend_elements, fontsize=9)
+    ax.set_xlabel("Day")
+    ax.set_ylabel("Titer (g/L)")
+    ax.set_title("Titer trajectory — Top vs Bottom batches", fontsize=13)
+    ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    out = RESULT_DIR / "titer_trajectory.png"
+    fig.savefig(out, dpi=130, bbox_inches="tight")
+    plt.close()
+    return str(out)
+
+
+def ts_correlation(filepath: str = None) -> str:
+    """
+    Day별 컴포넌트 vs 최종 Titer 상관관계 히트맵.
+    "어느 날의 어떤 성분이 최종 titer와 가장 관련있는가"
+    XAI 결과 사전 검증용.
+    ★ 신규
+    """
+    path = Path(filepath) if filepath else config.DATA_TIMESERIES
+    df   = pd.read_csv(path)
+
+    if "Fault flag" in df.columns:
+        df = df[df["Fault flag"] == 0]
+
+    batch_col  = "Batch_ID"
+    time_col   = "Time (day)"
+    titer_col  = "Titer (g/L)"
+
+    conc_cols = ["Glucose_conc", "Glutamine_conc", "Asparagine_conc",
+                 "Lactate_conc", "Ammonia_conc", "Cu_conc", "Zn_conc",
+                 "Mn_conc", "Fe_conc"]
+    conc_cols = [c for c in conc_cols if c in df.columns]
+
+    # 최종 titer
+    final_titer = (
+        df[df[titer_col] > 0]
+        .groupby(batch_col)[titer_col]
+        .last()
+    )
+
+    days   = sorted(df[time_col].unique())
+    corr_matrix = pd.DataFrame(index=conc_cols, columns=days, dtype=float)
+
+    for day in days:
+        day_df = df[df[time_col] == day].set_index(batch_col)
+        for col in conc_cols:
+            if col not in day_df.columns:
+                continue
+            merged = pd.concat([day_df[col], final_titer], axis=1).dropna()
+            if len(merged) < 5:
+                continue
+            r, _ = stats.pearsonr(merged[col], merged[titer_col])
+            corr_matrix.loc[col, day] = round(r, 3)
+
+    corr_matrix = corr_matrix.astype(float)
+    corr_matrix.index = [c.replace("_conc", "") for c in corr_matrix.index]
+
+    fig, ax = plt.subplots(figsize=(14, 5))
+    sns.heatmap(corr_matrix, annot=True, fmt=".2f", cmap="RdYlGn",
+                center=0, ax=ax, linewidths=0.5, annot_kws={"size": 8},
+                vmin=-1, vmax=1)
+    ax.set_xlabel("Day", fontsize=11)
+    ax.set_ylabel("Component", fontsize=11)
+    ax.set_title("Day × Component correlation with final Titer (Pearson r)",
+                 fontsize=12, pad=12)
+    plt.tight_layout()
+    out = RESULT_DIR / "ts_correlation.png"
+    fig.savefig(out, dpi=130, bbox_inches="tight")
+    plt.close()
+    return str(out)
+
+
+def fault_detection(filepath: str = None) -> str:
+    """
+    Fault flag 발생 배치 시각화.
+    정상 배치 vs 이상 배치의 주요 성분 비교.
+    ★ 신규
+    """
+    path = Path(filepath) if filepath else config.DATA_TIMESERIES
+    df   = pd.read_csv(path)
+
+    if "Fault flag" not in df.columns:
+        raise ValueError("'Fault flag' column not found.")
+
+    batch_col  = "Batch_ID"
+    time_col   = "Time (day)"
+    fault_col  = "Fault flag"
+    plot_cols  = ["Glucose_conc", "Glutamine_conc", "Lactate_conc"]
+    plot_cols  = [c for c in plot_cols if c in df.columns]
+
+    # 배치별 fault 여부
+    fault_batches  = set(df[df[fault_col] == 1][batch_col].unique())
+    normal_batches = set(df[df[fault_col] == 0][batch_col].unique()) - fault_batches
+
+    n    = len(plot_cols)
+    fig, axes = plt.subplots(1, n, figsize=(n * 4.5, 4))
+    if n == 1:
+        axes = [axes]
+
+    for i, col in enumerate(plot_cols):
+        for bid in normal_batches:
+            grp = df[df[batch_col] == bid].sort_values(time_col)
+            axes[i].plot(grp[time_col], grp[col],
+                         color="#1D9E75", alpha=0.15, lw=0.8)
+        for bid in fault_batches:
+            grp = df[df[batch_col] == bid].sort_values(time_col)
+            axes[i].plot(grp[time_col], grp[col],
+                         color="#E24B4A", alpha=0.6, lw=1.5)
+
+        from matplotlib.lines import Line2D
+        axes[i].legend(handles=[
+            Line2D([0], [0], color="#1D9E75", lw=2, label=f"Normal ({len(normal_batches)})"),
+            Line2D([0], [0], color="#E24B4A", lw=2, label=f"Fault ({len(fault_batches)})"),
+        ], fontsize=8)
+        axes[i].set_title(col.replace("_conc", ""), fontsize=11)
+        axes[i].set_xlabel("Day")
+        axes[i].grid(True, alpha=0.3)
+
+    fig.suptitle(f"Fault detection — {len(fault_batches)} fault batches detected",
+                 fontsize=13)
+    plt.tight_layout()
+    out = RESULT_DIR / "fault_detection.png"
+    fig.savefig(out, dpi=130, bbox_inches="tight")
+    plt.close()
+    return str(out)
