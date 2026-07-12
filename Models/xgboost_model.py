@@ -163,6 +163,20 @@ class XGBoostModel:
         plt.close()
         print(f"[XGBoost] Feature importance saved: {RESULT_DIR}/feature_importance.png")
 
+    def get_config(self):
+        """
+        학습 정보 기록용 하이퍼파라미터 리포트.
+        train.py의 train_model()이 result.json의 meta.hyperparams에
+        이 값을 그대로 저장함.
+
+        ※ XGBoost는 하이퍼파라미터가 학습 전에 이미 config.py에서
+          고정되어 있으므로, self.model에서 직접 읽어옴.
+        """
+        return {
+            "n_estimators": self.model.n_estimators,
+            "random_state": self.model.random_state,
+        }
+
     def cross_validate(self, X, y, cv=5):
         """k-fold cross validation."""
         scores = cross_val_score(

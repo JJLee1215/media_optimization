@@ -52,6 +52,13 @@ class StaticTimeGNNModel:
         ).to(self.device)
         self.history = {"train": [], "val": [], "titer": [], "viab": [], "graph": []}
 
+        # ── 학습 정보 기록용: 생성자 파라미터 저장 ──
+        # get_config()에서 모델 구조 정보(d_static, d_dynamic, N)를
+        # result.json의 meta.hyperparams에 함께 기록하기 위해 보관.
+        self.d_static  = d_static
+        self.d_dynamic = d_dynamic
+        self.N         = N
+
     def _run_epoch(self, loader, optimizer=None):
         training = optimizer is not None
         self.net.train() if training else self.net.eval()
@@ -105,6 +112,10 @@ class StaticTimeGNNModel:
             torch.load(SAVE_PATH.parent / "stgnn_tmp.pt", weights_only=True)
         )
         print(f"[StaticTimeGNN] Training complete.  {time.time()-t0:.1f}s  best val: {best_val:.4f}@{best_epoch}")
+
+        # ── 학습 정보 기록용: 학습 후에만 확정되는 값 저장 ──
+        self.best_epoch = best_epoch
+        self.best_val   = round(float(best_val), 4)
 
     @torch.no_grad()
     def predict(self, m, X):
@@ -189,6 +200,30 @@ class StaticTimeGNNModel:
         path = RESULT_DIR / "loss_curves.png"
         plt.savefig(path, dpi=150); plt.close()
         print(f"[StaticTimeGNN] Saved: {path}")
+
+    def get_config(self):
+        """
+        학습 정보 기록용 하이퍼파라미터 리포트.
+        train.py의 train_model()이 result.json의 meta.hyperparams에
+        이 값을 그대로 저장함.
+
+        ※ d_static/d_dynamic/N은 생성자에서 받은 모델 구조 정보(정적으로 확정).
+          lr/epoch/lambda_viab/lambda_graph/huber_delta는 config.py에서
+          미리 고정된 값. best_epoch/best_val은 train()이 끝난 뒤에만
+          알 수 있는 값이라 getattr로 방어적으로 조회함.
+        """
+        return {
+            "epoch"        : config.GNN_EPOCHS,
+            "lr"           : config.GNN_LR,
+            "d_static"     : self.d_static,
+            "d_dynamic"    : self.d_dynamic,
+            "N"            : self.N,
+            "lambda_viab"  : config.GNN_LAMBDA_VIAB,
+            "lambda_graph" : config.GNN_LAMBDA_GRAPH,
+            "huber_delta"  : config.GNN_HUBER_DELTA,
+            "best_epoch"   : getattr(self, "best_epoch", None),
+            "best_val"     : getattr(self, "best_val", None),
+        }
 
     def save(self):
         SAVE_PATH.parent.mkdir(parents=True, exist_ok=True)

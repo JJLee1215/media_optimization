@@ -155,14 +155,31 @@ class GaussianProcessModel:
         }
 
     def cross_validate(self, X, y, cv=5):
-        """k-fold cross validation."""
-        scores = cross_val_score(
-            self._build(), X, y,
-            cv=cv, scoring="r2", n_jobs=-1
-        )
-        print(f"[GaussianProcess] CV R²: {np.round(scores, 3)}"
-              f"  mean={scores.mean():.3f} ± {scores.std():.3f}")
-        return scores
+            """k-fold cross validation."""
+            scores = cross_val_score(
+                self._build(), X, y,
+                cv=cv, scoring="r2", n_jobs=-1
+            )
+            print(f"[GaussianProcess] CV R²: {np.round(scores, 3)}"
+                f"  mean={scores.mean():.3f} ± {scores.std():.3f}")
+            return scores
+
+    def get_config(self):
+        """
+        학습 정보 기록용 하이퍼파라미터 리포트.
+        train.py의 train_model()이 result.json의 meta.hyperparams에
+        이 값을 그대로 저장함.
+
+        ※ kernel_은 model.fit() 이후에만 존재하는 학습된(fitted) 커널이라,
+          학습 전에 호출하면 KeyError 대신 fallback 값을 반환하도록 방어함.
+        """
+        return {
+            "kernel"               : str(self.model.kernel_) if hasattr(self.model, "kernel_") else None,
+            "n_restarts_optimizer" : config.GP_N_RESTARTS,
+            "normalize_y"          : True,
+            "random_state"         : config.RANDOM_SEED,
+        }
+
 
     def save(self, use_pipeline: bool = False):
         """

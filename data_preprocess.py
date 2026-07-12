@@ -12,6 +12,10 @@ Functions:
   파라미터가 없으면 config.DATA_STATIC / config.DATA_TIMESERIES 기본값 사용.
   → UI에서 업로드한 파일명을 train.py → data_preprocess.py로 전달하면
     하드코딩 없이 어떤 CSV든 사용 가능.
+
+※ selected_cols 파라미터:
+  UI Feature Selection에서 고른 컬럼명 리스트.
+  None이면 (기존 동작대로) 전체 컬럼 사용.
 """
 
 import numpy as np
@@ -36,20 +40,23 @@ def get_pipeline() -> MediaPipeline:
     return _pipeline
 
 
-def get_static_data(use_pipeline: bool = False, static_file: str = None):
+def get_static_data(use_pipeline: bool = False, static_file: str = None, selected_cols: list = None):
     """
     Load and preprocess static data for GP, XGBoost, RandomForest, MLP.
 
-    static_file  : 파일명 (예: "batch_table_syn.csv")
-                   None이면 config.DATA_STATIC 기본값 사용
-                   UI에서 업로드한 파일명을 전달하면 해당 파일로 학습
+    static_file   : 파일명 (예: "batch_table_syn.csv")
+                    None이면 config.DATA_STATIC 기본값 사용
+                    UI에서 업로드한 파일명을 전달하면 해당 파일로 학습
 
-    use_pipeline : True → 9 → 230차원 heterogeneity pipeline 적용
-                   False → 9 features 그대로 (기본값)
+    use_pipeline  : True → 9 → 230차원 heterogeneity pipeline 적용
+                    False → 9 features 그대로 (기본값)
+
+    selected_cols : 사용할 feature 컬럼명 리스트 (예: ["Glucose_0", "Glutamine_0"])
+                    None이면 전체 컬럼 사용 (기존 동작)
 
     Returns:
-        X_train  (n_train, VECTOR_DIM) or (n_train, 9)
-        X_test   (n_test,  VECTOR_DIM) or (n_test,  9)
+        X_train  (n_train, VECTOR_DIM) or (n_train, len(x_cols))
+        X_test   (n_test,  VECTOR_DIM) or (n_test,  len(x_cols))
         y_train  (n_train,)
         y_test   (n_test,)
         x_cols   list of feature names
@@ -68,6 +75,12 @@ def get_static_data(use_pipeline: bool = False, static_file: str = None):
 
     drop_cols = ["Batch_ID", "titer_final", "viab_final"]
     x_cols    = [c for c in df.columns if c not in drop_cols]
+
+    # ── 선택된 컬럼만 사용 ──
+    if selected_cols:
+        x_cols = [c for c in x_cols if c in selected_cols]
+        if not x_cols:
+            raise ValueError("selected_cols와 일치하는 static feature가 없습니다.")
 
     X = df[x_cols].values.astype(np.float32)
     y = df["titer_final"].values.astype(np.float32)
@@ -98,13 +111,16 @@ def get_static_data(use_pipeline: bool = False, static_file: str = None):
     return X_train, X_test, y_train, y_test, x_cols, scaler
 
 
-def get_timeseries_data(batch_size=None, ts_file: str = None):
+def get_timeseries_data(batch_size=None, ts_file: str = None, selected_cols: list = None):
     """
     Load and preprocess time series data for RNN, LSTM, Transformer.
 
-    ts_file  : 파일명 (예: "timeseries_syn.csv")
-               None이면 config.DATA_TIMESERIES 기본값 사용
-               UI에서 업로드한 파일명을 전달하면 해당 파일로 학습
+    ts_file       : 파일명 (예: "timeseries_syn.csv")
+                    None이면 config.DATA_TIMESERIES 기본값 사용
+                    UI에서 업로드한 파일명을 전달하면 해당 파일로 학습
+
+    selected_cols : 사용할 timeseries feature 컬럼명 리스트
+                    None이면 전체 컬럼 사용 (기존 동작)
 
     ※ 시계열 pipeline 적용은 추후 고려, 현재는 기존 동작 유지
 
@@ -139,6 +155,12 @@ def get_timeseries_data(batch_size=None, ts_file: str = None):
     skip_cols  = [batch_col, time_col, "Fault flag", target_col]
     feat_cols  = [c for c in df.columns if c not in skip_cols]
 
+    # ── 선택된 컬럼만 사용 ──
+    if selected_cols:
+        feat_cols = [c for c in feat_cols if c in selected_cols]
+        if not feat_cols:
+            raise ValueError("selected_cols와 일치하는 timeseries feature가 없습니다.")
+
     X_list, y_list = [], []
     for _, grp in df.groupby(batch_col):
         grp = grp.sort_values(time_col)
@@ -155,6 +177,7 @@ def get_timeseries_data(batch_size=None, ts_file: str = None):
 
     print(f"[preprocess] Loaded: {file_path}")
     print(f"  X: {X.shape}  (n_batches, T, d_dynamic)")
+    print(f"  Features: {feat_cols}")
     print(f"  y: {y.shape}")
 
     X_train, X_test, y_train, y_test = train_test_split(
@@ -202,3 +225,7 @@ if __name__ == "__main__":
     loaders, x_sc, y_sc, X_test_ts, y_test_ts, feat_cols = get_timeseries_data()
     xb, yb = next(iter(loaders["train"]))
     print(f"  batch X: {xb.shape}  batch y: {yb.shape}")
+
+    print("\n[4] Static data (selected_cols 테스트)")
+    X_train3, X_test3, _, _, x_cols3, _ = get_static_data(selected_cols=["Glucose_0", "Glutamine_0"])
+    print(f"  X_train: {X_train3.shape}  x_cols: {x_cols3}")

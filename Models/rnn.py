@@ -114,6 +114,10 @@ class RNNModel:
         self.net.load_state_dict(torch.load(SAVE_PATH.parent / "rnn_tmp.pt", weights_only=True))
         print(f"[RNN] Training complete.  {time.time()-t0:.1f}s  best val: {best_val:.4f}@{best_epoch}")
 
+        # ── 학습 정보 기록용: 학습 후에만 확정되는 값 저장 ──
+        self.best_epoch = best_epoch
+        self.best_val   = round(float(best_val), 4)
+
     def predict(self, X):
         """
         X       : (n, T, 28)  numpy array (scaled)
@@ -160,6 +164,25 @@ class RNNModel:
             "model": MODEL_NAME,
             "rmse" : round(float(rmse), 4),
             "r2"   : round(float(r2),   4),
+        }
+
+    def get_config(self):
+        """
+        학습 정보 기록용 하이퍼파라미터 리포트.
+        train.py의 train_model()이 result.json의 meta.hyperparams에
+        이 값을 그대로 저장함.
+
+        ※ hidden_size/num_layers/lr/epoch는 config.py에서 미리 고정된 값.
+          best_epoch/best_val은 train()이 끝난 뒤에만 알 수 있는 값이라
+          getattr로 방어적으로 조회함.
+        """
+        return {
+            "epoch"       : config.RNN_EPOCHS,
+            "hidden_size" : config.RNN_HIDDEN_SIZE,
+            "num_layers"  : config.RNN_NUM_LAYERS,
+            "lr"          : config.RNN_LR,
+            "best_epoch"  : getattr(self, "best_epoch", None),
+            "best_val"    : getattr(self, "best_val", None),
         }
 
     def save(self):

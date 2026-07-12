@@ -31,9 +31,12 @@ export default function TrainPage() {
   const [tsUploading,     setTsUploading]     = useState(false);
   const [usePipeline,     setUsePipeline]     = useState(false);
 
-  // Feature selection
-  const [availableFeats,  setAvailableFeats]  = useState([]);
-  const [selectedFeats,   setSelectedFeats]   = useState([]);
+  // Feature selection — Static
+  const [availableFeats,   setAvailableFeats]   = useState([]);
+  const [selectedFeats,    setSelectedFeats]    = useState([]);
+  // Feature selection — Timeseries
+  const [availableTsFeats, setAvailableTsFeats] = useState([]);
+  const [selectedTsFeats,  setSelectedTsFeats]  = useState([]);
 
   // 로그 스트리밍
   const [logs,      setLogs]      = useState([]);
@@ -115,6 +118,13 @@ export default function TrainPage() {
       const form = new FormData(); form.append("file", f);
       const { data } = await axios.post(`${API}/data/upload`, form);
       setTsFile(data.filename);
+      // Timeseries 컬럼 로드
+      const { data: colData } = await axios.get(
+        `${API}/data/columns?filename=${data.filename}&type=timeseries`
+      );
+      const cols = colData.columns ?? [];
+      setAvailableTsFeats(cols);
+      setSelectedTsFeats(cols);
     } catch (e) {} finally { setTsUploading(false); }
   };
 
@@ -123,7 +133,7 @@ export default function TrainPage() {
     if (staticInputRef.current) staticInputRef.current.value = "";
   };
   const clearTsFile = () => {
-    setTsFile("");
+    setTsFile(""); setAvailableTsFeats([]); setSelectedTsFeats([]);
     if (tsInputRef.current) tsInputRef.current.value = "";
   };
 
@@ -192,13 +202,14 @@ export default function TrainPage() {
 
     for (const modelId of selected) {
       await axios.post(`${API}/train`, {
-        model        : modelId,
-        use_pipeline : usePipeline,
-        static_file  : staticFile || null,
-        ts_file      : tsFile     || null,
-        selected_cols: selectedFeats.length > 0 ? selectedFeats : null,
+        model            : modelId,
+        use_pipeline     : usePipeline,
+        static_file      : staticFile || null,
+        ts_file          : tsFile     || null,
+        selected_cols    : selectedFeats.length   > 0 ? selectedFeats   : null,
+        selected_ts_cols : selectedTsFeats.length > 0 ? selectedTsFeats : null,
       });
-    }
+        }
   };
 
   const hasStGnn  = selected.includes("static_time_gnn");
@@ -251,7 +262,14 @@ export default function TrainPage() {
   );
 
   // Input dimension 계산
-  const inputDim = usePipeline ? 230 : selectedFeats.length;
+  const inputDim = usePipeline ? 230 : selectedFeats.length + selectedTsFeats.length;
+
+  // Feature Selection 블록 하이라이트 판별
+  const usesStaticTime = selected.some(id => models.static_time.some(m => m.id === id));
+  const usesStaticOnly = selected.some(id => models.static.some(m => m.id === id));
+  const usesTsOnly     = selected.some(id => models.timeseries.some(m => m.id === id));
+  const staticColor = usesStaticTime ? "st" : usesStaticOnly ? "static" : null;
+  const tsColor      = usesStaticTime ? "st" : usesTsOnly     ? "ts"     : null;
 
   return (
     <div className="train-page">
@@ -309,31 +327,73 @@ export default function TrainPage() {
           <div className="train-section">
             <div className="train-section-head feat">
               <span className="train-section-title">Feature Selection</span>
-              {availableFeats.length > 0 && (
-                <span className="feat-count-badge">
-                  {selectedFeats.length} / {availableFeats.length}
-                </span>
-              )}
-              <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
-                <button className="log-clear" onClick={() => setSelectedFeats(availableFeats)}>All</button>
-                <button className="log-clear" onClick={() => setSelectedFeats([])}>None</button>
-              </div>
             </div>
-            {availableFeats.length === 0 ? (
-              <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "0.25rem 0" }}>
-                Upload a static CSV file to select features
-              </div>
-            ) : (
-              <div className="feat-tag-area">
-                {availableFeats.map(f => (
-                  <div key={f}
-                    className={"feat-tag" + (selectedFeats.includes(f) ? " on" : "")}
-                    onClick={() => toggleFeat(f)}>
-                    {selectedFeats.includes(f) && "✓ "}{f}
+
+            {/* Static 서브섹션 */}
+            <div className={"feat-sub-section" + (staticColor ? ` lit ${staticColor}` : "")}>
+              <div className="feat-sub-head">
+                <span className={"feat-sub-dot" + (staticColor ? " active" : "")} />
+                <span className={"feat-sub-title" + (staticColor ? " active" : "")}>Static</span>
+                {staticFile && (
+                  <span className={"feat-sub-count" + (staticColor ? " in-use" : "")}>
+                    {selectedFeats.length} / {availableFeats.length}
+                  </span>
+                )}
+                {staticFile && (
+                  <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
+                    <button className="log-clear" onClick={() => setSelectedFeats(availableFeats)}>All</button>
+                    <button className="log-clear" onClick={() => setSelectedFeats([])}>None</button>
                   </div>
-                ))}
+                )}
               </div>
-            )}
+              {!staticFile ? (
+                <div className="feat-empty-note">파일을 업로드하면 feature가 표시됩니다</div>
+              ) : (
+                <div className="feat-tag-area">
+                  {availableFeats.map(f => (
+                    <div key={f}
+                      className={"feat-tag" + (selectedFeats.includes(f) ? " on" : "")}
+                      onClick={() => toggleFeat(f)}>
+                      {selectedFeats.includes(f) && <span style={{ color: "#1D9E75" }}>✓ </span>}{f}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Timeseries 서브섹션 */}
+            <div className={"feat-sub-section" + (tsColor ? ` lit ${tsColor}` : "")} style={{ marginTop: "0.5rem" }}>
+              <div className="feat-sub-head">
+                <span className={"feat-sub-dot" + (tsColor ? " active" : "")} />
+                <span className={"feat-sub-title" + (tsColor ? " active" : "")}>Timeseries</span>
+                {tsFile && (
+                  <span className={"feat-sub-count" + (tsColor ? " in-use" : "")}>
+                    {selectedTsFeats.length} / {availableTsFeats.length}
+                  </span>
+                )}
+                {tsFile && (
+                  <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
+                    <button className="log-clear" onClick={() => setSelectedTsFeats(availableTsFeats)}>All</button>
+                    <button className="log-clear" onClick={() => setSelectedTsFeats([])}>None</button>
+                  </div>
+                )}
+              </div>
+              {!tsFile ? (
+                <div className="feat-empty-note">파일을 업로드하면 feature가 표시됩니다</div>
+              ) : (
+                <div className="feat-tag-area">
+                  {availableTsFeats.map(f => (
+                    <div key={f}
+                      className={"feat-tag" + (selectedTsFeats.includes(f) ? " on" : "")}
+                      onClick={() => setSelectedTsFeats(prev =>
+                        prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f]
+                      )}>
+                      {selectedTsFeats.includes(f) && <span style={{ color: "#1D9E75" }}>✓ </span>}{f}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* 2. Heterogeneity */}
@@ -407,19 +467,45 @@ export default function TrainPage() {
             <div className="sum-block feat-block">
               <div className="sum-block-header">
                 <span className="sum-block-label">Features</span>
-                {availableFeats.length > 0 && (
-                  <span className="sum-feat-count">
-                    {selectedFeats.length} / {availableFeats.length}
-                  </span>
-                )}
+                <span className="sum-feat-count">
+                  {selectedFeats.length + selectedTsFeats.length} / {availableFeats.length + availableTsFeats.length}
+                </span>
               </div>
-              <div className="sum-feat-tags">
-                {selectedFeats.length > 0
-                  ? selectedFeats.map(f => (
-                      <span key={f} className="sum-feat-tag">{f.replace("_0","")}</span>
-                    ))
-                  : <span style={{ fontSize: 10, color: "var(--text-muted)" }}>None selected</span>
-                }
+
+              {/* Static */}
+              <div className="sum-feat-group">
+                <div className="sum-block-header">
+                  <span className="sum-feat-sublabel">Static</span>
+                  {availableFeats.length > 0 && (
+                    <span className="sum-feat-subcount">{selectedFeats.length} / {availableFeats.length}</span>
+                  )}
+                </div>
+                <div className="sum-feat-tags">
+                  {selectedFeats.length > 0
+                    ? selectedFeats.map(f => (
+                        <span key={f} className="sum-feat-tag">{f.replace("_0", "")}</span>
+                      ))
+                    : <span style={{ fontSize: 10, color: "var(--text-muted)" }}>None selected</span>
+                  }
+                </div>
+              </div>
+
+              {/* Timeseries */}
+              <div className="sum-feat-group">
+                <div className="sum-block-header">
+                  <span className="sum-feat-sublabel">Timeseries</span>
+                  {availableTsFeats.length > 0 && (
+                    <span className="sum-feat-subcount">{selectedTsFeats.length} / {availableTsFeats.length}</span>
+                  )}
+                </div>
+                <div className="sum-feat-tags">
+                  {selectedTsFeats.length > 0
+                    ? selectedTsFeats.map(f => (
+                        <span key={f} className="sum-feat-tag">{f}</span>
+                      ))
+                    : <span style={{ fontSize: 10, color: "var(--text-muted)" }}>None selected</span>
+                  }
+                </div>
               </div>
             </div>
 
@@ -437,8 +523,8 @@ export default function TrainPage() {
               <span className="sum-dim-val">{inputDim}</span>
               <span className="sum-dim-sub">
                 {usePipeline
-                  ? `${selectedFeats.length} features → 230 (embedded)`
-                  : `${selectedFeats.length} features × raw value`}
+                  ? `${selectedFeats.length + selectedTsFeats.length} features → 230 (embedded)`
+                  : `${selectedFeats.length + selectedTsFeats.length} features × raw value`}
               </span>
             </div>
 

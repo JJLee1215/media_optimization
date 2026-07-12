@@ -39,14 +39,17 @@ def push_log(line: str):
 
 
 class TrainRequest(BaseModel):
-    model        : str  = "static"
-    use_pipeline : bool = False
-    static_file  : str  = None   # 업로드된 static CSV 파일명
-    ts_file      : str  = None   # 업로드된 timeseries CSV 파일명
+    model             : str  = "static"
+    use_pipeline      : bool = False
+    static_file       : str  = None
+    ts_file           : str  = None
+    selected_cols     : list[str] | None = None
+    selected_ts_cols  : list[str] | None = None
 
 
 def run_training(model_group: str, use_pipeline: bool = False,
-                 static_file: str = None, ts_file: str = None):
+                 static_file: str = None, ts_file: str = None,
+                 selected_cols: list = None, selected_ts_cols: list = None):
     global log_buffer
     log_buffer = []
 
@@ -58,6 +61,10 @@ def run_training(model_group: str, use_pipeline: bool = False,
     push_log(f"▶ Training: {model_group.upper()}  |  Pipeline: {'ON' if use_pipeline else 'OFF'}")
     push_log(f"  Static file : {static_file or config.DATA_STATIC}")
     push_log(f"  TS file     : {ts_file or config.DATA_TIMESERIES}")
+    if selected_cols:
+        push_log(f"  Selected static cols : {selected_cols}")
+    if selected_ts_cols:
+        push_log(f"  Selected ts cols     : {selected_ts_cols}")
 
     try:
         cmd = ["python", "train.py", "--model", model_group]
@@ -67,6 +74,10 @@ def run_training(model_group: str, use_pipeline: bool = False,
             cmd += ["--static_file", static_file]
         if ts_file:
             cmd += ["--ts_file", ts_file]
+        if selected_cols:
+            cmd += ["--selected_cols", ",".join(selected_cols)]
+        if selected_ts_cols:
+            cmd += ["--selected_ts_cols", ",".join(selected_ts_cols)]
 
         proc = subprocess.Popen(
             cmd,
@@ -118,6 +129,8 @@ def train(req: TrainRequest, bg: BackgroundTasks):
         req.use_pipeline,
         req.static_file,
         req.ts_file,
+        req.selected_cols,
+        req.selected_ts_cols,
     )
     return {"message": f"Training started: {req.model}"}
 

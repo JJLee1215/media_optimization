@@ -14,6 +14,7 @@ import sys
 import os
 import argparse
 import json
+import datetime
 import torch
 import numpy as np
 from pathlib import Path
@@ -66,15 +67,11 @@ def get_model(model_name):
         raise ValueError(f"Unknown model: {model_name}")
 
 
-def train_static(model_name, use_pipeline=False, static_file=None):
-    """
-    static_file : 파일명 (예: "my_batch.csv")
-                  None이면 config.DATA_STATIC 기본값 사용
-    use_pipeline : heterogeneity pipeline 적용 여부
-    """
+def train_static(model_name, use_pipeline=False, static_file=None, selected_cols=None):
     X_train, X_test, y_train, y_test, x_cols, scaler = get_static_data(
         use_pipeline=use_pipeline,
         static_file=static_file,
+        selected_cols=selected_cols,
     )
     model = get_model(model_name)
     model.train(X_train, y_train, x_cols=x_cols, scaler=scaler)
@@ -84,30 +81,36 @@ def train_static(model_name, use_pipeline=False, static_file=None):
     if hasattr(model, "cross_validate"):
         model.cross_validate(X_train, y_train)
     model.save(use_pipeline=use_pipeline)
+
+    result["_actual_static_cols"] = x_cols
+    result["_model_obj"] = model
     return result
 
 
-def train_time(model_name, ts_file=None):
-    """
-    ts_file : 파일명 (예: "my_timeseries.csv")
-              None이면 config.DATA_TIMESERIES 기본값 사용
-    """
+def train_time(model_name, ts_file=None, selected_cols=None):
     loaders, x_sc, y_sc, X_test, y_test, feat_cols = get_timeseries_data(
         ts_file=ts_file,
+        selected_cols=selected_cols,
     )
     model = get_model(model_name)
     model.train(loaders, y_sc)
     result = model.evaluate(X_test, y_test)
     model.save()
+
+    result["_actual_ts_cols"] = feat_cols
+    result["_model_obj"] = model
     return result
 
 
-def train_static_time(use_pipeline=False, static_file=None, ts_file=None):
+def train_static_time(use_pipeline=False, static_file=None, ts_file=None,
+                       selected_cols=None, selected_ts_cols=None):
     """
     StaticTimeGNN — uses both static and timeseries data.
 
-    static_file : 정적 배지 데이터 파일명 (None이면 기본값)
-    ts_file     : 시계열 데이터 파일명 (None이면 기본값)
+    static_file      : 정적 배지 데이터 파일명 (None이면 기본값)
+    ts_file          : 시계열 데이터 파일명 (None이면 기본값)
+    selected_cols    : 사용할 static feature 컬럼명 리스트 (None이면 전체 사용)
+    selected_ts_cols : 사용할 timeseries feature 컬럼명 리스트 (None이면 전체 사용)
 
     ※ StaticTimeGNN의 save()는 현재 state_dict만 저장하는 구조라
        use_pipeline 메타정보를 함께 기록하지 못함 (보류 중).
@@ -130,6 +133,8 @@ def train_static_time(use_pipeline=False, static_file=None, ts_file=None):
 
     drop_cols   = ["Batch_ID", "titer_final", "viab_final"]
     static_cols = [c for c in df_static.columns if c not in drop_cols]
+    if selected_cols:
+        static_cols = [c for c in static_cols if c in selected_cols]
 
     m_static_np = df_static[static_cols].values.astype(np.float32)
 
@@ -148,6 +153,8 @@ def train_static_time(use_pipeline=False, static_file=None, ts_file=None):
     target_col = "Titer (g/L)"
     skip_cols  = [batch_col, time_col, "Fault flag", target_col]
     feat_cols  = [c for c in df_dynamic.columns if c not in skip_cols]
+    if selected_ts_cols:
+        feat_cols = [c for c in feat_cols if c in selected_ts_cols]
 
     X_list = []
     for _, grp in df_dynamic.groupby(batch_col):
@@ -201,26 +208,66 @@ def train_static_time(use_pipeline=False, static_file=None, ts_file=None):
     model.train(train_loader, val_loader)
     result = model.evaluate(train_loader, val_loader)
     model.save()
+
+    result["_actual_static_cols"] = static_cols
+    result["_actual_ts_cols"]     = feat_cols
+    result["_model_obj"]          = model
     return result
 
 
-def train_model(model_name, use_pipeline=False, static_file=None, ts_file=None):
+def train_model(model_name, use_pipeline=False, static_file=None, ts_file=None,
+                 selected_cols=None, selected_ts_cols=None):
     config.make_dirs()
     print(f"\n{'='*55}")
     print(f"  Training    : {model_name.upper()}")
     print(f"  Pipeline    : {'ON' if use_pipeline else 'OFF'}")
     print(f"  Static file : {static_file or config.DATA_STATIC}")
     print(f"  TS file     : {ts_file or config.DATA_TIMESERIES}")
+    if selected_cols:
+        print(f"  Selected static cols : {selected_cols}")
+    if selected_ts_cols:
+        print(f"  Selected ts cols     : {selected_ts_cols}")
     print(f"{'='*55}")
 
     if model_name in STATIC_MODELS:
-        result = train_static(model_name, use_pipeline=use_pipeline, static_file=static_file)
+        result = train_static(model_name, use_pipeline=use_pipeline, static_file=static_file,
+                               selected_cols=selected_cols)
     elif model_name in TIME_MODELS:
-        result = train_time(model_name, ts_file=ts_file)
+        result = train_time(model_name, ts_file=ts_file, selected_cols=selected_ts_cols)
     elif model_name == "static_time_gnn":
-        result = train_static_time(use_pipeline=use_pipeline, static_file=static_file, ts_file=ts_file)
+        result = train_static_time(use_pipeline=use_pipeline, static_file=static_file, ts_file=ts_file,
+                                    selected_cols=selected_cols, selected_ts_cols=selected_ts_cols)
     else:
         raise ValueError(f"Unknown model: {model_name}")
+
+    # ── 임시로 실어온 내부용 값 꺼내기 ──
+    actual_static_cols = result.pop("_actual_static_cols", None)
+    actual_ts_cols      = result.pop("_actual_ts_cols", None)
+    model_obj           = result.pop("_model_obj", None)
+
+    # ── 학습 정보(meta) 조립 ──
+    result["model"]      = model_name
+    result["trained_at"] = datetime.datetime.now().isoformat(timespec="seconds")
+    result["data_file"]  = {
+        "static"    : static_file or config.DATA_STATIC.name,
+        "timeseries": ts_file or config.DATA_TIMESERIES.name,
+    }
+    result["use_pipeline"] = use_pipeline
+    result["meta"] = {
+        "selected_columns": {
+            "static": {
+                "requested": selected_cols,
+                "actual"   : actual_static_cols,
+                "matches"  : (selected_cols is None) or (set(selected_cols or []) == set(actual_static_cols or [])),
+            },
+            "timeseries": {
+                "requested": selected_ts_cols,
+                "actual"   : actual_ts_cols,
+                "matches"  : (selected_ts_cols is None) or (set(selected_ts_cols or []) == set(actual_ts_cols or [])),
+            },
+        },
+    }
+    result["hyperparams"] = model_obj.get_config() if (model_obj and hasattr(model_obj, "get_config")) else {}
 
     result_path = config.result_dir(model_name) / "result.json"
     result_path.parent.mkdir(parents=True, exist_ok=True)
@@ -230,7 +277,8 @@ def train_model(model_name, use_pipeline=False, static_file=None, ts_file=None):
     return result
 
 
-def train_group(group: str, use_pipeline=False, static_file=None, ts_file=None):
+def train_group(group: str, use_pipeline=False, static_file=None, ts_file=None,
+                 selected_cols=None, selected_ts_cols=None):
     models  = MODEL_GROUPS[group]
     results = {}
 
@@ -241,6 +289,8 @@ def train_group(group: str, use_pipeline=False, static_file=None, ts_file=None):
                 use_pipeline=use_pipeline,
                 static_file=static_file,
                 ts_file=ts_file,
+                selected_cols=selected_cols,
+                selected_ts_cols=selected_ts_cols,
             )
         except Exception as e:
             print(f"\n[{name}] Error: {e}")
@@ -269,7 +319,18 @@ if __name__ == "__main__":
         "--ts_file", type=str, default=None,
         help="Timeseries CSV filename in data_file/ (default: timeseries_syn.csv)",
     )
+    parser.add_argument(
+        "--selected_cols", type=str, default=None,
+        help="쉼표로 구분된 static feature 컬럼명 (예: Glucose_0,Glutamine_0)",
+    )
+    parser.add_argument(
+        "--selected_ts_cols", type=str, default=None,
+        help="쉼표로 구분된 timeseries feature 컬럼명",
+    )
     args = parser.parse_args()
+
+    sel_cols    = args.selected_cols.split(",")    if args.selected_cols    else None
+    sel_ts_cols = args.selected_ts_cols.split(",") if args.selected_ts_cols else None
 
     if args.model in MODEL_GROUPS:
         train_group(
@@ -277,6 +338,8 @@ if __name__ == "__main__":
             use_pipeline=args.pipeline,
             static_file=args.static_file,
             ts_file=args.ts_file,
+            selected_cols=sel_cols,
+            selected_ts_cols=sel_ts_cols,
         )
     else:
         train_model(
@@ -284,4 +347,6 @@ if __name__ == "__main__":
             use_pipeline=args.pipeline,
             static_file=args.static_file,
             ts_file=args.ts_file,
+            selected_cols=sel_cols,
+            selected_ts_cols=sel_ts_cols,
         )
