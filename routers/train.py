@@ -218,3 +218,69 @@ def get_results(model_name: str):
     for img in result_dir.glob("*.png"):
         images[img.stem] = f"/static/{model_name}/{img.name}"
     return {"model": model_name, "result": result, "images": images}
+
+
+_pipeline_dim_cache = {}
+
+@router.get("/pipeline_dims")
+def get_pipeline_dims():
+    """
+    각 파이프라인의 차원 구성을 실제 모델에서 계산해서 반환.
+    embedding/metal_physchem/log_conc/gem 세부 항목 + total을 함께 내려줘서
+    프론트가 Heterogeneity 카드 하단 상세 표시와 우측 요약(total)에
+    모두 재사용할 수 있게 함. 한 번 계산한 값은 프로세스가 살아있는 동안 캐싱
+    (특히 UniMol처럼 무거운 모델은 매 요청마다 다시 로딩하면 느리므로).
+    """
+    global _pipeline_dim_cache
+    if _pipeline_dim_cache:
+        return _pipeline_dim_cache
+
+    dims = {}
+
+    # RDKit
+    from heterogeneity.smile_gem_pipe import (
+        MediaPipeline, METAL_PHYSCHEM_DIM, GEM_DIM
+    )
+    rdkit_pipe = MediaPipeline()
+    dims["rdkit"] = {
+        "embedding"      : rdkit_pipe._emb_dim,
+        "metal_physchem" : METAL_PHYSCHEM_DIM,
+        "log_conc"       : 1,
+        "gem"            : GEM_DIM,
+        "total"          : rdkit_pipe.vector_dim,
+    }
+
+    # ChemBERTa — config만 불러오면 가벼움 (가중치 전체 다운로드 X)
+    from transformers import AutoConfig
+    from heterogeneity.smile_BERTA_gem_pipe import (
+        METAL_PHYSCHEM_DIM as BERTA_METAL_DIM,
+        GEM_DIM as BERTA_GEM_DIM,
+        CHEMBERTA_MODEL_NAME,
+    )
+    cfg = AutoConfig.from_pretrained(CHEMBERTA_MODEL_NAME)
+    emb_dim = cfg.hidden_size
+    dims["chemberta"] = {
+        "embedding"      : emb_dim,
+        "metal_physchem" : BERTA_METAL_DIM,
+        "log_conc"       : 1,
+        "gem"            : BERTA_GEM_DIM,
+        "total"          : emb_dim + BERTA_METAL_DIM + 1 + BERTA_GEM_DIM,
+    }
+
+    # UniMol — 무거움, 여기서만 실제 로딩
+    from heterogeneity.smile_UniMol_gem_pipe import (
+        UniMolMediaPipeline,
+        METAL_PHYSCHEM_DIM as UNIMOL_METAL_DIM,
+        GEM_DIM as UNIMOL_GEM_DIM,
+    )
+    unimol_pipe = UniMolMediaPipeline()
+    dims["unimol"] = {
+        "embedding"      : unimol_pipe._emb_dim,
+        "metal_physchem" : UNIMOL_METAL_DIM,
+        "log_conc"       : 1,
+        "gem"            : UNIMOL_GEM_DIM,
+        "total"          : unimol_pipe.vector_dim,
+    }
+
+    _pipeline_dim_cache = dims
+    return dims

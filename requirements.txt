@@ -11,3 +11,5 @@ python-multipart
 fastapi
 uvicorn[standard]
 rdkit
+transformers
+unimol_tools

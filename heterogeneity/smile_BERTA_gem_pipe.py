@@ -1,127 +1,41 @@
 """
-smile_gem_pipe.py
-CHO 배지 Heterogeneity 처리 파이프라인 (Step 1 ~ 4)
+smile_BERTA_gem_pipe.py
+CHO 배지 Heterogeneity 처리 파이프라인 (Step 1 ~ 4) — ChemBERTa 버전
 
 Step 1  : SMILES 변환 (딕셔너리 조회)
-Step 2  : 분자 임베딩 (RDKit descriptor, 완전 고정)
+Step 2  : 분자 임베딩 (ChemBERTa 사전학습 모델, frozen)
 Step 2-2: GEM 벡터 (대사경로 사전 지식, 완전 고정)
 Step 3  : 농도 log 스케일링 + concat
 Step 4  : Mean Pooling → 배지 표현 벡터 (고정 차원)
 
+media_pipeline.py(RDKit 버전)와 구조는 동일하고, 분자 임베딩 방식만
+RDKit descriptor(217dim) 대신 ChemBERTa 사전학습 모델(768dim)을 사용.
+
 최종 벡터 예시:
-   [RDKit 217개 | 물리특성 0,0,0,0,0 | log(4.1)=1.41 | GEM 1,0,1,0,1,0,0]
-   총 230차원
+   [ChemBERTa 768개 | 물리특성 0,0,0,0,0 | log(4.1)=1.41 | GEM 1,0,1,0,1,0,0]
+   총 781차원
 
 Usage:
-  from media_pipeline import MediaPipeline
-  pipeline = MediaPipeline()
+  from smile_BERTA_gem_pipe import ChemBERTaMediaPipeline
+  pipeline = ChemBERTaMediaPipeline()
   X_repr = pipeline.transform(X, feature_cols)   # (n, 9) → (n, VECTOR_DIM)
-"""
 
-# ============================================================
-# CHO 배지 Heterogeneity 처리 파이프라인 핵심 개념
-# ============================================================
-#
-# 문제:
-#   배치마다 배지 컴포넌트가 다름
-#   배치1: Glucose, Glutamine, Fe  (3개)
-#   배치2: Glucose, Cu, Zn, Mn    (4개)
-#   → 컴포넌트 수/종류가 달라 일반 ML 모델에 바로 넣을 수 없음
-#
-# 해결:
-#   각 컴포넌트를 230차원 벡터로 변환 후 평균
-#   → 컴포넌트 수/종류 달라도 항상 (배치수, 230) 출력
-#
-# ============================================================
-# 예시 1. Glucose (농도 4.1 g/L)
-# ============================================================
-#
-# Step 1. 이름 → SMILES (분자 구조 문자열)
-#   "Glucose_0" → "C([C@@H]1[C@H]([C@@H]([C@H](C(O1)O)O)O)O)O"
-#   PubChem에서 복사해온 포도당의 원자 연결 구조
-#
-# Step 2. SMILES → RDKit descriptor 217개 (자동 계산, 고정)
-#   분자량=180.1, logP=-3.24, 극성=110.4, 수소결합수=5, ...
-#   → [180.1, -3.24, 110.4, 5, ...] (217개)
-#   유기분자는 값이 풍부하게 채워짐
-#
-# Step 2-2. 물리특성 5개 (금속 아니므로 0으로 채움)
-#   Glucose는 이온이 아님 → [0, 0, 0, 0, 0]
-#
-# Step 3. 농도 log 변환 1개
-#   log(4.1 + ε) = 1.41
-#   log 쓰는 이유: 농도 범위가 0.001 ~ 200으로 넓어서
-#                  그대로 쓰면 큰 값이 임베딩을 왜곡함
-#
-# Step 2-2. GEM 벡터 7개 (사전 지식, 고정)
-#   Glucose는 해당과정(O), TCA(X), PPP(O), AA합성(X),
-#             에너지대사(O), Cofactor(X), 산화스트레스(X)
-#   → [1, 0, 1, 0, 1, 0, 0]
-#
-# 최종 Glucose 벡터:
-#   [RDKit 217개 | 물리특성 0,0,0,0,0 | log(4.1)=1.41 | GEM 1,0,1,0,1,0,0]
-#   총 230차원
-#
-# ============================================================
-# 예시 2. Cu2+ (농도 0.03 g/L)
-# ============================================================
-#
-# Step 1. 이름 → SMILES
-#   "Cu_0" → "[Cu+2]"
-#   구리 이온을 SMILES로 표현
-#
-# Step 2. SMILES → RDKit descriptor 217개 (자동 계산, 고정)
-#   금속 이온은 유기분자가 아니라 대부분 0으로 채워짐
-#   → [55.8, 0, 0, 0, 0, ...] (217개, 원자량 외 대부분 0)
-#   RDKit이 금속 이온을 잘 표현 못하는 한계가 있음
-#
-# Step 2-2. 물리특성 5개 (금속이므로 직접 입력)
-#   RDKit 한계를 보완하기 위해 이온 특성을 수동으로 추가
-#   원자번호=29, 이온반지름=0.73Å, 전기음성도=1.90,
-#   원자량=63.5, 산화수=2
-#   → [29, 0.73, 1.90, 63.5, 2]
-#
-# Step 3. 농도 log 변환 1개
-#   log(0.03 + ε) = -3.51
-#
-# Step 2-2. GEM 벡터 7개 (사전 지식, 고정)
-#   Cu2+는 해당과정(X), TCA(X), PPP(X), AA합성(X),
-#          에너지대사(O), Cofactor(O), 산화스트레스(O)
-#   → [0, 0, 0, 0, 1, 1, 1]
-#   Cu2+는 특정 효소의 조인자로 작동하고
-#   산화스트레스(활성산소 반응)와 밀접하게 관련됨
-#
-# 최종 Cu2+ 벡터:
-#   [RDKit 217개 | 물리특성 29,0.73,1.90,63.5,2 | log(0.03)=-3.51 | GEM 0,0,0,0,1,1,1]
-#   총 230차원
-#
-# ============================================================
-# 두 컴포넌트를 합치면 (이 배치에 Glucose, Cu만 있는 경우)
-# ============================================================
-#
-#   Glucose → [g1, g2, ..., g230]
-#   Cu2+    → [c1, c2, ..., c230]
-#
-#   Mean Pooling (평균):
-#   → [(g1+c1)/2, (g2+c2)/2, ..., (g230+c230)/2]
-#   = [230차원 벡터 1개]  ← 이 배치의 최종 배지 표현
-#
-#   컴포넌트가 3개든 9개든 항상 230차원으로 통일됨
-#   → 모델은 항상 같은 크기의 입력을 받음
-# ============================================================
+Requirements:
+  pip install transformers --break-system-packages
+  (requirements.txt에 transformers 추가 필요)
+"""
 
 import numpy as np
 import warnings
 warnings.filterwarnings("ignore")
 
-from rdkit import Chem
-from rdkit.Chem import Descriptors
-from rdkit.ML.Descriptors import MoleculeDescriptors
+import torch
+from transformers import AutoTokenizer, AutoModel
 
 
 # ══════════════════════════════════════════════
 # Step 1. SMILES 딕셔너리
-# 새 컴포넌트: PubChem에서 Canonical SMILES 복사 후 여기 추가
+# media_pipeline.py와 완전히 동일 (같은 컴포넌트를 쓰므로 중복 유지)
 # ══════════════════════════════════════════════
 
 COMPONENT_SMILES = {
@@ -138,7 +52,7 @@ COMPONENT_SMILES = {
 
 # ══════════════════════════════════════════════
 # Step 2-2. GEM 벡터 (대사경로 사전 지식)
-# CHO GEM (iCHO1766 / KEGG / BiGG) 기반
+# media_pipeline.py와 완전히 동일
 # ══════════════════════════════════════════════
 
 GEM_PATHWAYS = [
@@ -174,42 +88,72 @@ METAL_PHYSCHEM = {
 METAL_PHYSCHEM_DIM = 5
 GEM_DIM            = len(GEM_PATHWAYS)
 
+# ══════════════════════════════════════════════
+# ChemBERTa 모델 설정
+# ══════════════════════════════════════════════
 
-class MediaPipeline:
+CHEMBERTA_MODEL_NAME = "seyonec/ChemBERTa-zinc-base-v1"
+
+
+class ChemBERTaMediaPipeline:
     """
-    CHO 배지 Heterogeneity 처리 파이프라인
+    CHO 배지 Heterogeneity 처리 파이프라인 — ChemBERTa 임베딩 버전
+
+    RDKit descriptor 대신 사전학습된 ChemBERTa(SMILES 기반 언어모델)를
+    사용해 분자 임베딩을 생성. 모델 가중치는 학습 중 고정(frozen)됨 —
+    파인튜닝하지 않고 특징 추출기로만 사용.
 
     transform(X, feature_cols) 한 번 호출로 Step 1~4 완료
     X shape: (n_samples, n_components) → (n_samples, VECTOR_DIM)
     """
 
-    def __init__(self, eps: float = 1e-6):
-        self.eps = eps
+    def __init__(self, eps: float = 1e-6, device: str = None):
+        self.eps    = eps
+        self.device = torch.device(device) if device else torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu"
+        )
 
-        # Step 2: RDKit descriptor 계산기 초기화 (고정)
-        descriptor_names  = [d[0] for d in Descriptors.descList]
-        self._calc        = MoleculeDescriptors.MolecularDescriptorCalculator(descriptor_names)
-        self._emb_dim     = len(descriptor_names)
-        self.vector_dim   = self._emb_dim + METAL_PHYSCHEM_DIM + 1 + GEM_DIM
+        # Step 2: ChemBERTa 로드 (사전학습, frozen)
+        print(f"[ChemBERTaMediaPipeline] 모델 로딩 중: {CHEMBERTA_MODEL_NAME}")
+        self._tokenizer = AutoTokenizer.from_pretrained(CHEMBERTA_MODEL_NAME)
+        self._model     = AutoModel.from_pretrained(CHEMBERTA_MODEL_NAME).to(self.device)
+        self._model.eval()                        # 학습 모드 아님 (frozen feature extractor)
+        for p in self._model.parameters():
+            p.requires_grad = False                # 그래디언트 계산 비활성화 (메모리/속도)
 
-        # 컴포넌트 임베딩 사전 계산 (고정)
-        self._embeddings  = self._precompute_embeddings()
+        self._emb_dim   = self._model.config.hidden_size   # 보통 768
+        self.vector_dim = self._emb_dim + METAL_PHYSCHEM_DIM + 1 + GEM_DIM
 
-        print(f"[MediaPipeline] 초기화 완료")
-        print(f"  RDKit descriptor : {self._emb_dim}-dim")
-        print(f"  Metal physchem   : {METAL_PHYSCHEM_DIM}-dim")
-        print(f"  GEM pathways     : {GEM_DIM}-dim")
-        print(f"  최종 벡터 차원   : {self.vector_dim}-dim")
+        # 컴포넌트 임베딩 사전 계산 (고정 — RDKit 버전과 동일한 패턴)
+        self._embeddings = self._precompute_embeddings()
+
+        print(f"[ChemBERTaMediaPipeline] 초기화 완료")
+        print(f"  ChemBERTa embedding : {self._emb_dim}-dim")
+        print(f"  Metal physchem      : {METAL_PHYSCHEM_DIM}-dim")
+        print(f"  GEM pathways        : {GEM_DIM}-dim")
+        print(f"  최종 벡터 차원      : {self.vector_dim}-dim")
 
     # ──────────────────────────────────────────
-    # Step 2: SMILES → RDKit descriptor
+    # Step 2: SMILES → ChemBERTa embedding
+    # mean pooling: 토큰별 hidden state를 attention mask 기준으로 평균
+    # (ChemBERTa는 RoBERTa 계열이라 BERT의 [CLS] 풀링 대신 mean pooling이
+    #  문장/분자 표현으로 더 안정적이라고 알려져 있음)
     # ──────────────────────────────────────────
+    @torch.no_grad()
     def _smiles_to_embedding(self, smiles: str) -> np.ndarray:
-        mol = Chem.MolFromSmiles(smiles)
-        if mol is None:
-            return np.zeros(self._emb_dim, dtype=np.float32)
-        descs = np.array(self._calc.CalcDescriptors(mol), dtype=np.float32)
-        return np.nan_to_num(descs, nan=0.0, posinf=0.0, neginf=0.0)
+        inputs = self._tokenizer(smiles, return_tensors="pt", truncation=True, max_length=128)
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+
+        outputs = self._model(**inputs)
+        token_embeddings = outputs.last_hidden_state              # (1, seq_len, emb_dim)
+        attention_mask    = inputs["attention_mask"].unsqueeze(-1)  # (1, seq_len, 1)
+
+        summed = (token_embeddings * attention_mask).sum(dim=1)
+        count  = attention_mask.sum(dim=1).clamp(min=1e-9)
+        mean_pooled = (summed / count).squeeze(0)                  # (emb_dim,)
+
+        vec = mean_pooled.cpu().numpy().astype(np.float32)
+        return np.nan_to_num(vec, nan=0.0, posinf=0.0, neginf=0.0)
 
     def _precompute_embeddings(self) -> dict:
         return {
@@ -219,7 +163,7 @@ class MediaPipeline:
 
     # ──────────────────────────────────────────
     # Step 3: 단일 컴포넌트 벡터 생성
-    # [RDKit | metal_physchem | log(농도) | GEM]
+    # [ChemBERTa | metal_physchem | log(농도) | GEM]
     # ──────────────────────────────────────────
     def _build_component_vector(self, comp: str, conc: float) -> np.ndarray:
         mol_emb   = self._embeddings[comp]                                        # (emb_dim,)
@@ -230,6 +174,7 @@ class MediaPipeline:
 
     # ──────────────────────────────────────────
     # Step 4: 배치 1개 → Mean Pooling
+    # media_pipeline.py와 완전히 동일
     # ──────────────────────────────────────────
     def _batch_row_to_vector(self, row: np.ndarray, feature_cols: list) -> np.ndarray:
         """
@@ -269,7 +214,7 @@ class MediaPipeline:
             for row in X
         ], dtype=np.float32)
 
-        print(f"[MediaPipeline] transform 완료: {X.shape} → {X_repr.shape}")
+        print(f"[ChemBERTaMediaPipeline] transform 완료: {X.shape} → {X_repr.shape}")
         return X_repr
 
 
@@ -278,7 +223,6 @@ class MediaPipeline:
 # ══════════════════════════════════════════════
 if __name__ == "__main__":
     import sys, os
-    # 루트 디렉토리를 path에 추가
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
     import pandas as pd
@@ -289,7 +233,7 @@ if __name__ == "__main__":
     feature_cols = [c for c in df.columns if c not in drop_cols]
     X            = df[feature_cols].values.astype(np.float32)
 
-    pipeline = MediaPipeline()
+    pipeline = ChemBERTaMediaPipeline()
     X_repr   = pipeline.transform(X, feature_cols)
 
     print(f"\n결과:")

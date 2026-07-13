@@ -1,127 +1,46 @@
 """
-smile_gem_pipe.py
-CHO 배지 Heterogeneity 처리 파이프라인 (Step 1 ~ 4)
+smile_UniMol_gem_pipe.py
+CHO 배지 Heterogeneity 처리 파이프라인 (Step 1 ~ 4) — UniMol 버전
 
 Step 1  : SMILES 변환 (딕셔너리 조회)
-Step 2  : 분자 임베딩 (RDKit descriptor, 완전 고정)
+Step 2  : 분자 임베딩 (UniMol 사전학습 모델, frozen)
+          ※ UniMol은 SMILES를 내부적으로 3D conformer로 변환한 뒤
+             그 3D 구조를 벡터화함 (unimol_tools가 이 과정을 전부 처리)
 Step 2-2: GEM 벡터 (대사경로 사전 지식, 완전 고정)
 Step 3  : 농도 log 스케일링 + concat
 Step 4  : Mean Pooling → 배지 표현 벡터 (고정 차원)
 
+media_pipeline.py(RDKit 버전), smile_BERTA_gem_pipe.py(ChemBERTa 버전)와
+구조는 동일하고, 분자 임베딩 방식만 UniMol(512dim)로 교체.
+
 최종 벡터 예시:
-   [RDKit 217개 | 물리특성 0,0,0,0,0 | log(4.1)=1.41 | GEM 1,0,1,0,1,0,0]
-   총 230차원
+   [UniMol 512개 | 물리특성 0,0,0,0,0 | log(4.1)=1.41 | GEM 1,0,1,0,1,0,0]
+   총 525차원
 
 Usage:
-  from media_pipeline import MediaPipeline
-  pipeline = MediaPipeline()
+  from smile_UniMol_gem_pipe import UniMolMediaPipeline
+  pipeline = UniMolMediaPipeline()
   X_repr = pipeline.transform(X, feature_cols)   # (n, 9) → (n, VECTOR_DIM)
-"""
 
-# ============================================================
-# CHO 배지 Heterogeneity 처리 파이프라인 핵심 개념
-# ============================================================
-#
-# 문제:
-#   배치마다 배지 컴포넌트가 다름
-#   배치1: Glucose, Glutamine, Fe  (3개)
-#   배치2: Glucose, Cu, Zn, Mn    (4개)
-#   → 컴포넌트 수/종류가 달라 일반 ML 모델에 바로 넣을 수 없음
-#
-# 해결:
-#   각 컴포넌트를 230차원 벡터로 변환 후 평균
-#   → 컴포넌트 수/종류 달라도 항상 (배치수, 230) 출력
-#
-# ============================================================
-# 예시 1. Glucose (농도 4.1 g/L)
-# ============================================================
-#
-# Step 1. 이름 → SMILES (분자 구조 문자열)
-#   "Glucose_0" → "C([C@@H]1[C@H]([C@@H]([C@H](C(O1)O)O)O)O)O"
-#   PubChem에서 복사해온 포도당의 원자 연결 구조
-#
-# Step 2. SMILES → RDKit descriptor 217개 (자동 계산, 고정)
-#   분자량=180.1, logP=-3.24, 극성=110.4, 수소결합수=5, ...
-#   → [180.1, -3.24, 110.4, 5, ...] (217개)
-#   유기분자는 값이 풍부하게 채워짐
-#
-# Step 2-2. 물리특성 5개 (금속 아니므로 0으로 채움)
-#   Glucose는 이온이 아님 → [0, 0, 0, 0, 0]
-#
-# Step 3. 농도 log 변환 1개
-#   log(4.1 + ε) = 1.41
-#   log 쓰는 이유: 농도 범위가 0.001 ~ 200으로 넓어서
-#                  그대로 쓰면 큰 값이 임베딩을 왜곡함
-#
-# Step 2-2. GEM 벡터 7개 (사전 지식, 고정)
-#   Glucose는 해당과정(O), TCA(X), PPP(O), AA합성(X),
-#             에너지대사(O), Cofactor(X), 산화스트레스(X)
-#   → [1, 0, 1, 0, 1, 0, 0]
-#
-# 최종 Glucose 벡터:
-#   [RDKit 217개 | 물리특성 0,0,0,0,0 | log(4.1)=1.41 | GEM 1,0,1,0,1,0,0]
-#   총 230차원
-#
-# ============================================================
-# 예시 2. Cu2+ (농도 0.03 g/L)
-# ============================================================
-#
-# Step 1. 이름 → SMILES
-#   "Cu_0" → "[Cu+2]"
-#   구리 이온을 SMILES로 표현
-#
-# Step 2. SMILES → RDKit descriptor 217개 (자동 계산, 고정)
-#   금속 이온은 유기분자가 아니라 대부분 0으로 채워짐
-#   → [55.8, 0, 0, 0, 0, ...] (217개, 원자량 외 대부분 0)
-#   RDKit이 금속 이온을 잘 표현 못하는 한계가 있음
-#
-# Step 2-2. 물리특성 5개 (금속이므로 직접 입력)
-#   RDKit 한계를 보완하기 위해 이온 특성을 수동으로 추가
-#   원자번호=29, 이온반지름=0.73Å, 전기음성도=1.90,
-#   원자량=63.5, 산화수=2
-#   → [29, 0.73, 1.90, 63.5, 2]
-#
-# Step 3. 농도 log 변환 1개
-#   log(0.03 + ε) = -3.51
-#
-# Step 2-2. GEM 벡터 7개 (사전 지식, 고정)
-#   Cu2+는 해당과정(X), TCA(X), PPP(X), AA합성(X),
-#          에너지대사(O), Cofactor(O), 산화스트레스(O)
-#   → [0, 0, 0, 0, 1, 1, 1]
-#   Cu2+는 특정 효소의 조인자로 작동하고
-#   산화스트레스(활성산소 반응)와 밀접하게 관련됨
-#
-# 최종 Cu2+ 벡터:
-#   [RDKit 217개 | 물리특성 29,0.73,1.90,63.5,2 | log(0.03)=-3.51 | GEM 0,0,0,0,1,1,1]
-#   총 230차원
-#
-# ============================================================
-# 두 컴포넌트를 합치면 (이 배치에 Glucose, Cu만 있는 경우)
-# ============================================================
-#
-#   Glucose → [g1, g2, ..., g230]
-#   Cu2+    → [c1, c2, ..., c230]
-#
-#   Mean Pooling (평균):
-#   → [(g1+c1)/2, (g2+c2)/2, ..., (g230+c230)/2]
-#   = [230차원 벡터 1개]  ← 이 배치의 최종 배지 표현
-#
-#   컴포넌트가 3개든 9개든 항상 230차원으로 통일됨
-#   → 모델은 항상 같은 크기의 입력을 받음
-# ============================================================
+Requirements:
+  pip install unimol_tools --break-system-packages
+  (requirements.txt에 unimol_tools 추가 필요)
+
+※ 첫 실행 시 UniMol 사전학습 체크포인트(수백MB)를 다운로드하므로
+  시간이 걸릴 수 있음. 3D conformer 생성 실패 시(금속 이온처럼
+  RDKit이 3D 좌표를 못 만드는 경우) 0벡터로 대체 처리함.
+"""
 
 import numpy as np
 import warnings
 warnings.filterwarnings("ignore")
 
-from rdkit import Chem
-from rdkit.Chem import Descriptors
-from rdkit.ML.Descriptors import MoleculeDescriptors
+from unimol_tools import UniMolRepr
 
 
 # ══════════════════════════════════════════════
 # Step 1. SMILES 딕셔너리
-# 새 컴포넌트: PubChem에서 Canonical SMILES 복사 후 여기 추가
+# media_pipeline.py, smile_BERTA_gem_pipe.py와 완전히 동일
 # ══════════════════════════════════════════════
 
 COMPONENT_SMILES = {
@@ -138,7 +57,7 @@ COMPONENT_SMILES = {
 
 # ══════════════════════════════════════════════
 # Step 2-2. GEM 벡터 (대사경로 사전 지식)
-# CHO GEM (iCHO1766 / KEGG / BiGG) 기반
+# 다른 두 파이프라인과 완전히 동일
 # ══════════════════════════════════════════════
 
 GEM_PATHWAYS = [
@@ -175,41 +94,66 @@ METAL_PHYSCHEM_DIM = 5
 GEM_DIM            = len(GEM_PATHWAYS)
 
 
-class MediaPipeline:
+class UniMolMediaPipeline:
     """
-    CHO 배지 Heterogeneity 처리 파이프라인
+    CHO 배지 Heterogeneity 처리 파이프라인 — UniMol 임베딩 버전
+
+    RDKit descriptor/ChemBERTa 대신 사전학습된 UniMol(3D 구조 기반
+    분자 표현 모델)을 사용. unimol_tools의 UniMolRepr이 SMILES →
+    3D conformer 생성 → 임베딩까지 내부적으로 전부 처리함.
 
     transform(X, feature_cols) 한 번 호출로 Step 1~4 완료
     X shape: (n_samples, n_components) → (n_samples, VECTOR_DIM)
     """
 
-    def __init__(self, eps: float = 1e-6):
+    def __init__(self, eps: float = 1e-6, use_gpu: bool = False):
         self.eps = eps
 
-        # Step 2: RDKit descriptor 계산기 초기화 (고정)
-        descriptor_names  = [d[0] for d in Descriptors.descList]
-        self._calc        = MoleculeDescriptors.MolecularDescriptorCalculator(descriptor_names)
-        self._emb_dim     = len(descriptor_names)
-        self.vector_dim   = self._emb_dim + METAL_PHYSCHEM_DIM + 1 + GEM_DIM
+        # Step 2: UniMol 로드 (사전학습, frozen)
+        # remove_hs=False → 수소 원자까지 포함해서 3D 구조 생성 (기본 권장값)
+        print(f"[UniMolMediaPipeline] 모델 로딩 중: unimol_tools (molecule)")
+        self._clf = UniMolRepr(
+            data_type="molecule",
+            remove_hs=False,
+            use_gpu=use_gpu,
+        )
 
-        # 컴포넌트 임베딩 사전 계산 (고정)
-        self._embeddings  = self._precompute_embeddings()
+        # UniMol 기본 임베딩 차원 (cls_repr 기준, 통상 512)
+        self._emb_dim   = None   # 첫 임베딩 계산 후 자동 결정
+        self._embeddings = self._precompute_embeddings()
+        self._emb_dim    = len(next(iter(self._embeddings.values())))
+        self.vector_dim  = self._emb_dim + METAL_PHYSCHEM_DIM + 1 + GEM_DIM
 
-        print(f"[MediaPipeline] 초기화 완료")
-        print(f"  RDKit descriptor : {self._emb_dim}-dim")
+        print(f"[UniMolMediaPipeline] 초기화 완료")
+        print(f"  UniMol embedding : {self._emb_dim}-dim")
         print(f"  Metal physchem   : {METAL_PHYSCHEM_DIM}-dim")
         print(f"  GEM pathways     : {GEM_DIM}-dim")
         print(f"  최종 벡터 차원   : {self.vector_dim}-dim")
 
     # ──────────────────────────────────────────
-    # Step 2: SMILES → RDKit descriptor
+    # Step 2: SMILES → UniMol embedding
+    # unimol_tools가 3D conformer 생성부터 벡터화까지 내부 처리.
+    # 3D 구조 생성에 실패하는 경우(금속 이온 등)는 예외로 잡아서
+    # 0벡터로 대체 — RDKit 버전의 "mol is None → zeros" 처리와 동일한 철학.
     # ──────────────────────────────────────────
     def _smiles_to_embedding(self, smiles: str) -> np.ndarray:
-        mol = Chem.MolFromSmiles(smiles)
-        if mol is None:
-            return np.zeros(self._emb_dim, dtype=np.float32)
-        descs = np.array(self._calc.CalcDescriptors(mol), dtype=np.float32)
-        return np.nan_to_num(descs, nan=0.0, posinf=0.0, neginf=0.0)
+        """
+        unimol_tools의 get_repr()은 dict가 아니라 numpy 배열을 담은
+        리스트를 반환함 — result[0]이 (emb_dim,) 형태의 임베딩 벡터.
+        (버전에 따라 반환 형식이 dict일 수도 있어 두 경우 모두 방어)
+        """
+        try:
+            result = self._clf.get_repr([smiles], return_atomic_reprs=False)
+            if isinstance(result, dict) and "cls_repr" in result:
+                raw = result["cls_repr"][0]
+            else:
+                raw = result[0]
+            vec = np.array(raw, dtype=np.float32)
+            return np.nan_to_num(vec, nan=0.0, posinf=0.0, neginf=0.0)
+        except Exception as e:
+            print(f"[UniMolMediaPipeline] 경고: '{smiles}' 임베딩 실패 ({e}) → 0벡터로 대체")
+            dim = self._emb_dim if self._emb_dim else 512
+            return np.zeros(dim, dtype=np.float32)
 
     def _precompute_embeddings(self) -> dict:
         return {
@@ -219,7 +163,7 @@ class MediaPipeline:
 
     # ──────────────────────────────────────────
     # Step 3: 단일 컴포넌트 벡터 생성
-    # [RDKit | metal_physchem | log(농도) | GEM]
+    # [UniMol | metal_physchem | log(농도) | GEM]
     # ──────────────────────────────────────────
     def _build_component_vector(self, comp: str, conc: float) -> np.ndarray:
         mol_emb   = self._embeddings[comp]                                        # (emb_dim,)
@@ -230,6 +174,7 @@ class MediaPipeline:
 
     # ──────────────────────────────────────────
     # Step 4: 배치 1개 → Mean Pooling
+    # media_pipeline.py와 완전히 동일
     # ──────────────────────────────────────────
     def _batch_row_to_vector(self, row: np.ndarray, feature_cols: list) -> np.ndarray:
         """
@@ -269,7 +214,7 @@ class MediaPipeline:
             for row in X
         ], dtype=np.float32)
 
-        print(f"[MediaPipeline] transform 완료: {X.shape} → {X_repr.shape}")
+        print(f"[UniMolMediaPipeline] transform 완료: {X.shape} → {X_repr.shape}")
         return X_repr
 
 
@@ -278,7 +223,6 @@ class MediaPipeline:
 # ══════════════════════════════════════════════
 if __name__ == "__main__":
     import sys, os
-    # 루트 디렉토리를 path에 추가
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
     import pandas as pd
@@ -289,7 +233,7 @@ if __name__ == "__main__":
     feature_cols = [c for c in df.columns if c not in drop_cols]
     X            = df[feature_cols].values.astype(np.float32)
 
-    pipeline = MediaPipeline()
+    pipeline = UniMolMediaPipeline()
     X_repr   = pipeline.transform(X, feature_cols)
 
     print(f"\n결과:")

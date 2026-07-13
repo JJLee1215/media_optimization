@@ -1,0 +1,94 @@
+2026-07-13 00:48:28 | unimol_tools/weights/weighthub.py | 54 | INFO | Uni-Mol Tools | Weights will be downloaded to default directory: /usr/local/lib/python3.11/site-packages/unimol_tools/weights
+2026-07-13 00:48:28 | unimol_tools/weights/weighthub.py | 71 | INFO | Uni-Mol Tools | Downloading mol_pre_all_h_220816.pt
+2026-07-13 00:48:38 | unimol_tools/weights/weighthub.py | 54 | INFO | Uni-Mol Tools | Weights will be downloaded to default directory: /usr/local/lib/python3.11/site-packages/unimol_tools/weights
+2026-07-13 00:48:38 | unimol_tools/weights/weighthub.py | 71 | INFO | Uni-Mol Tools | Downloading mol.dict.txt
+2026-07-13 00:48:39 | unimol_tools/models/unimol.py | 169 | INFO | Uni-Mol Tools | Loading pretrained weights from /usr/local/lib/python3.11/site-packages/unimol_tools/weights/mol_pre_all_h_220816.pt
+2026-07-13 00:48:39 | unimol_tools/data/conformer.py | 185 | INFO | Uni-Mol Tools | Start generating conformers...
+2026-07-13 00:48:44 | unimol_tools/data/conformer.py | 199 | INFO | Uni-Mol Tools | Succeeded in generating conformers for 100.00% of molecules.
+2026-07-13 00:48:44 | unimol_tools/data/conformer.py | 216 | INFO | Uni-Mol Tools | Succeeded in generating 3d conformers for 100.00% of molecules.
+2026-07-13 00:48:44 | unimol_tools/tasks/trainer.py | 103 | INFO | Uni-Mol Tools | Using CPU.
+2026-07-13 00:48:44 | unimol_tools/data/conformer.py | 185 | INFO | Uni-Mol Tools | Start generating conformers...
+2026-07-13 00:48:48 | unimol_tools/data/conformer.py | 199 | INFO | Uni-Mol Tools | Succeeded in generating conformers for 100.00% of molecules.
+2026-07-13 00:48:48 | unimol_tools/data/conformer.py | 216 | INFO | Uni-Mol Tools | Succeeded in generating 3d conformers for 100.00% of molecules.
+2026-07-13 00:48:48 | unimol_tools/tasks/trainer.py | 103 | INFO | Uni-Mol Tools | Using CPU.
+2026-07-13 00:48:48 | unimol_tools/data/conformer.py | 185 | INFO | Uni-Mol Tools | Start generating conformers...
+2026-07-13 00:48:52 | unimol_tools/data/conformer.py | 199 | INFO | Uni-Mol Tools | Succeeded in generating conformers for 100.00% of molecules.
+2026-07-13 00:48:52 | unimol_tools/data/conformer.py | 216 | INFO | Uni-Mol Tools | Succeeded in generating 3d conformers for 100.00% of molecules.
+2026-07-13 00:48:52 | unimol_tools/tasks/trainer.py | 103 | INFO | Uni-Mol Tools | Using CPU.
+2026-07-13 00:48:52 | unimol_tools/data/conformer.py | 185 | INFO | Uni-Mol Tools | Start generating conformers...
+2026-07-13 00:48:55 | unimol_tools/data/conformer.py | 199 | INFO | Uni-Mol Tools | Succeeded in generating conformers for 100.00% of molecules.
+2026-07-13 00:48:55 | unimol_tools/data/conformer.py | 216 | INFO | Uni-Mol Tools | Succeeded in generating 3d conformers for 100.00% of molecules.
+2026-07-13 00:48:55 | unimol_tools/tasks/trainer.py | 103 | INFO | Uni-Mol Tools | Using CPU.
+2026-07-13 00:48:56 | unimol_tools/data/conformer.py | 185 | INFO | Uni-Mol Tools | Start generating conformers...
+2026-07-13 00:48:59 | unimol_tools/data/conformer.py | 199 | INFO | Uni-Mol Tools | Succeeded in generating conformers for 100.00% of molecules.
+2026-07-13 00:48:59 | unimol_tools/data/conformer.py | 216 | INFO | Uni-Mol Tools | Succeeded in generating 3d conformers for 100.00% of molecules.
+2026-07-13 00:48:59 | unimol_tools/tasks/trainer.py | 103 | INFO | Uni-Mol Tools | Using CPU.
+2026-07-13 00:48:59 | unimol_tools/data/conformer.py | 185 | INFO | Uni-Mol Tools | Start generating conformers...
+2026-07-13 00:49:02 | unimol_tools/data/conformer.py | 199 | INFO | Uni-Mol Tools | Succeeded in generating conformers for 0.00% of molecules.
+2026-07-13 00:49:02 | unimol_tools/data/conformer.py | 208 | INFO | Uni-Mol Tools | Failed conformers indices: [0]
+2026-07-13 00:49:02 | unimol_tools/data/conformer.py | 216 | INFO | Uni-Mol Tools | Succeeded in generating 3d conformers for 0.00% of molecules.
+2026-07-13 00:49:02 | unimol_tools/data/conformer.py | 225 | INFO | Uni-Mol Tools | Failed 3d conformers indices: [0]
+2026-07-13 00:49:02 | unimol_tools/tasks/trainer.py | 103 | INFO | Uni-Mol Tools | Using CPU.
+2026-07-13 00:49:02 | unimol_tools/data/conformer.py | 185 | INFO | Uni-Mol Tools | Start generating conformers...
+2026-07-13 00:49:03 | unimol_tools/models/unimol.py | 169 | INFO | Uni-Mol Tools | Loading pretrained weights from /usr/local/lib/python3.11/site-packages/unimol_tools/weights/mol_pre_all_h_220816.pt
+2026-07-13 00:49:03 | unimol_tools/data/conformer.py | 185 | INFO | Uni-Mol Tools | Start generating conformers...
+2026-07-13 00:49:06 | unimol_tools/data/conformer.py | 199 | INFO | Uni-Mol Tools | Succeeded in generating conformers for 0.00% of molecules.
+2026-07-13 00:49:06 | unimol_tools/data/conformer.py | 208 | INFO | Uni-Mol Tools | Failed conformers indices: [0]
+2026-07-13 00:49:06 | unimol_tools/data/conformer.py | 216 | INFO | Uni-Mol Tools | Succeeded in generating 3d conformers for 0.00% of molecules.
+2026-07-13 00:49:06 | unimol_tools/data/conformer.py | 225 | INFO | Uni-Mol Tools | Failed 3d conformers indices: [0]
+2026-07-13 00:49:06 | unimol_tools/tasks/trainer.py | 103 | INFO | Uni-Mol Tools | Using CPU.
+2026-07-13 00:49:06 | unimol_tools/data/conformer.py | 185 | INFO | Uni-Mol Tools | Start generating conformers...
+2026-07-13 00:49:07 | unimol_tools/data/conformer.py | 199 | INFO | Uni-Mol Tools | Succeeded in generating conformers for 100.00% of molecules.
+2026-07-13 00:49:07 | unimol_tools/data/conformer.py | 216 | INFO | Uni-Mol Tools | Succeeded in generating 3d conformers for 100.00% of molecules.
+2026-07-13 00:49:07 | unimol_tools/tasks/trainer.py | 103 | INFO | Uni-Mol Tools | Using CPU.
+2026-07-13 00:49:07 | unimol_tools/data/conformer.py | 185 | INFO | Uni-Mol Tools | Start generating conformers...
+2026-07-13 00:49:10 | unimol_tools/data/conformer.py | 199 | INFO | Uni-Mol Tools | Succeeded in generating conformers for 0.00% of molecules.
+2026-07-13 00:49:10 | unimol_tools/data/conformer.py | 208 | INFO | Uni-Mol Tools | Failed conformers indices: [0]
+2026-07-13 00:49:10 | unimol_tools/data/conformer.py | 216 | INFO | Uni-Mol Tools | Succeeded in generating 3d conformers for 0.00% of molecules.
+2026-07-13 00:49:10 | unimol_tools/data/conformer.py | 225 | INFO | Uni-Mol Tools | Failed 3d conformers indices: [0]
+2026-07-13 00:49:10 | unimol_tools/tasks/trainer.py | 103 | INFO | Uni-Mol Tools | Using CPU.
+2026-07-13 00:49:10 | unimol_tools/data/conformer.py | 185 | INFO | Uni-Mol Tools | Start generating conformers...
+2026-07-13 00:49:11 | unimol_tools/data/conformer.py | 199 | INFO | Uni-Mol Tools | Succeeded in generating conformers for 100.00% of molecules.
+2026-07-13 00:49:11 | unimol_tools/data/conformer.py | 216 | INFO | Uni-Mol Tools | Succeeded in generating 3d conformers for 100.00% of molecules.
+2026-07-13 00:49:11 | unimol_tools/tasks/trainer.py | 103 | INFO | Uni-Mol Tools | Using CPU.
+2026-07-13 00:49:12 | unimol_tools/data/conformer.py | 185 | INFO | Uni-Mol Tools | Start generating conformers...
+2026-07-13 00:49:14 | unimol_tools/data/conformer.py | 199 | INFO | Uni-Mol Tools | Succeeded in generating conformers for 0.00% of molecules.
+2026-07-13 00:49:14 | unimol_tools/data/conformer.py | 208 | INFO | Uni-Mol Tools | Failed conformers indices: [0]
+2026-07-13 00:49:14 | unimol_tools/data/conformer.py | 216 | INFO | Uni-Mol Tools | Succeeded in generating 3d conformers for 0.00% of molecules.
+2026-07-13 00:49:14 | unimol_tools/data/conformer.py | 225 | INFO | Uni-Mol Tools | Failed 3d conformers indices: [0]
+2026-07-13 00:49:14 | unimol_tools/tasks/trainer.py | 103 | INFO | Uni-Mol Tools | Using CPU.
+2026-07-13 00:49:16 | unimol_tools/data/conformer.py | 199 | INFO | Uni-Mol Tools | Succeeded in generating conformers for 100.00% of molecules.
+2026-07-13 00:49:16 | unimol_tools/data/conformer.py | 216 | INFO | Uni-Mol Tools | Succeeded in generating 3d conformers for 100.00% of molecules.
+2026-07-13 00:49:16 | unimol_tools/tasks/trainer.py | 103 | INFO | Uni-Mol Tools | Using CPU.
+2026-07-13 00:49:16 | unimol_tools/data/conformer.py | 185 | INFO | Uni-Mol Tools | Start generating conformers...
+2026-07-13 00:49:20 | unimol_tools/data/conformer.py | 199 | INFO | Uni-Mol Tools | Succeeded in generating conformers for 100.00% of molecules.
+2026-07-13 00:49:20 | unimol_tools/data/conformer.py | 216 | INFO | Uni-Mol Tools | Succeeded in generating 3d conformers for 100.00% of molecules.
+2026-07-13 00:49:20 | unimol_tools/tasks/trainer.py | 103 | INFO | Uni-Mol Tools | Using CPU.
+2026-07-13 00:49:20 | unimol_tools/data/conformer.py | 185 | INFO | Uni-Mol Tools | Start generating conformers...
+2026-07-13 00:49:24 | unimol_tools/data/conformer.py | 199 | INFO | Uni-Mol Tools | Succeeded in generating conformers for 100.00% of molecules.
+2026-07-13 00:49:24 | unimol_tools/data/conformer.py | 216 | INFO | Uni-Mol Tools | Succeeded in generating 3d conformers for 100.00% of molecules.
+2026-07-13 00:49:24 | unimol_tools/tasks/trainer.py | 103 | INFO | Uni-Mol Tools | Using CPU.
+2026-07-13 00:49:24 | unimol_tools/data/conformer.py | 185 | INFO | Uni-Mol Tools | Start generating conformers...
+2026-07-13 00:49:27 | unimol_tools/data/conformer.py | 199 | INFO | Uni-Mol Tools | Succeeded in generating conformers for 0.00% of molecules.
+2026-07-13 00:49:27 | unimol_tools/data/conformer.py | 208 | INFO | Uni-Mol Tools | Failed conformers indices: [0]
+2026-07-13 00:49:27 | unimol_tools/data/conformer.py | 216 | INFO | Uni-Mol Tools | Succeeded in generating 3d conformers for 0.00% of molecules.
+2026-07-13 00:49:27 | unimol_tools/data/conformer.py | 225 | INFO | Uni-Mol Tools | Failed 3d conformers indices: [0]
+2026-07-13 00:49:27 | unimol_tools/tasks/trainer.py | 103 | INFO | Uni-Mol Tools | Using CPU.
+2026-07-13 00:49:27 | unimol_tools/data/conformer.py | 185 | INFO | Uni-Mol Tools | Start generating conformers...
+2026-07-13 00:49:31 | unimol_tools/data/conformer.py | 199 | INFO | Uni-Mol Tools | Succeeded in generating conformers for 0.00% of molecules.
+2026-07-13 00:49:31 | unimol_tools/data/conformer.py | 208 | INFO | Uni-Mol Tools | Failed conformers indices: [0]
+2026-07-13 00:49:31 | unimol_tools/data/conformer.py | 216 | INFO | Uni-Mol Tools | Succeeded in generating 3d conformers for 0.00% of molecules.
+2026-07-13 00:49:31 | unimol_tools/data/conformer.py | 225 | INFO | Uni-Mol Tools | Failed 3d conformers indices: [0]
+2026-07-13 00:49:31 | unimol_tools/tasks/trainer.py | 103 | INFO | Uni-Mol Tools | Using CPU.
+2026-07-13 00:49:31 | unimol_tools/data/conformer.py | 185 | INFO | Uni-Mol Tools | Start generating conformers...
+2026-07-13 00:49:34 | unimol_tools/data/conformer.py | 199 | INFO | Uni-Mol Tools | Succeeded in generating conformers for 0.00% of molecules.
+2026-07-13 00:49:34 | unimol_tools/data/conformer.py | 208 | INFO | Uni-Mol Tools | Failed conformers indices: [0]
+2026-07-13 00:49:34 | unimol_tools/data/conformer.py | 216 | INFO | Uni-Mol Tools | Succeeded in generating 3d conformers for 0.00% of molecules.
+2026-07-13 00:49:34 | unimol_tools/data/conformer.py | 225 | INFO | Uni-Mol Tools | Failed 3d conformers indices: [0]
+2026-07-13 00:49:34 | unimol_tools/tasks/trainer.py | 103 | INFO | Uni-Mol Tools | Using CPU.
+2026-07-13 00:49:34 | unimol_tools/data/conformer.py | 185 | INFO | Uni-Mol Tools | Start generating conformers...
+2026-07-13 00:49:38 | unimol_tools/data/conformer.py | 199 | INFO | Uni-Mol Tools | Succeeded in generating conformers for 0.00% of molecules.
+2026-07-13 00:49:38 | unimol_tools/data/conformer.py | 208 | INFO | Uni-Mol Tools | Failed conformers indices: [0]
+2026-07-13 00:49:38 | unimol_tools/data/conformer.py | 216 | INFO | Uni-Mol Tools | Succeeded in generating 3d conformers for 0.00% of molecules.
+2026-07-13 00:49:38 | unimol_tools/data/conformer.py | 225 | INFO | Uni-Mol Tools | Failed 3d conformers indices: [0]
+2026-07-13 00:49:38 | unimol_tools/tasks/trainer.py | 103 | INFO | Uni-Mol Tools | Using CPU.

@@ -18,6 +18,13 @@ const MODEL_ICONS = {
 
 const HG = ["⏳", "⌛"];
 
+const PIPELINE_LABEL = {
+  none      : "🚫 No Pipeline",
+  rdkit     : "🧪 SM-RD-GEM",
+  chemberta : "🤖 SM-BERTA-GEM",
+  unimol    : "🌐 SM-UniMol-GEM",
+};
+
 export default function TrainPage() {
   const [models,          setModels]          = useState({ static: [], timeseries: [], static_time: [] });
   const [selected,        setSelected]        = useState([]);
@@ -29,7 +36,8 @@ export default function TrainPage() {
   const [tsFile,          setTsFile]          = useState("");
   const [staticUploading, setStaticUploading] = useState(false);
   const [tsUploading,     setTsUploading]     = useState(false);
-  const [usePipeline,     setUsePipeline]     = useState(false);
+  const [pipelineType,    setPipelineType]    = useState("none");   // "none" | "rdkit" | "chemberta" | "unimol"
+  const [pipelineDims,    setPipelineDims]    = useState({});
 
   // Feature selection — Static
   const [availableFeats,   setAvailableFeats]   = useState([]);
@@ -55,6 +63,7 @@ export default function TrainPage() {
 
   useEffect(() => {
     fetchModels();
+    axios.get(`${API}/train/pipeline_dims`).then(({ data }) => setPipelineDims(data)).catch(() => {});
     fetchAllResults().then(() => {
       axios.get(`${API}/train/results/all`).then(({ data }) => {
         const ids = Object.keys(data);
@@ -203,13 +212,15 @@ export default function TrainPage() {
     for (const modelId of selected) {
       await axios.post(`${API}/train`, {
         model            : modelId,
-        use_pipeline     : usePipeline,
+        use_pipeline     : pipelineType !== "none",
         static_file      : staticFile || null,
         ts_file          : tsFile     || null,
         selected_cols    : selectedFeats.length   > 0 ? selectedFeats   : null,
         selected_ts_cols : selectedTsFeats.length > 0 ? selectedTsFeats : null,
+        embedding_model  : pipelineType !== "none" ? pipelineType : null,
+        other_blocks     : pipelineType !== "none" ? ["log_conc", "metal_physchem", "gem"] : null,
       });
-        }
+    }
   };
 
   const hasStGnn  = selected.includes("static_time_gnn");
@@ -262,7 +273,9 @@ export default function TrainPage() {
   );
 
   // Input dimension 계산
-  const inputDim = usePipeline ? 230 : selectedFeats.length + selectedTsFeats.length;
+  const inputDim = pipelineType !== "none"
+    ? (pipelineDims[pipelineType]?.total ?? "…")
+    : selectedFeats.length + selectedTsFeats.length;
 
   // Feature Selection 블록 하이라이트 판별
   const usesStaticTime = selected.some(id => models.static_time.some(m => m.id === id));
@@ -270,6 +283,13 @@ export default function TrainPage() {
   const usesTsOnly     = selected.some(id => models.timeseries.some(m => m.id === id));
   const staticColor = usesStaticTime ? "st" : usesStaticOnly ? "static" : null;
   const tsColor      = usesStaticTime ? "st" : usesTsOnly     ? "ts"     : null;
+
+  const PIPELINE_OPTIONS = [
+    { id: "none",      icon: "🚫", name: "No Pipeline",   desc: "Raw concentration" },
+    { id: "rdkit",     icon: "🧪", name: "SM-RD-GEM",     desc: "SMILES · RDKit · GEM" },
+    { id: "chemberta", icon: "🤖", name: "SM-BERTA-GEM",  desc: "SMILES · ChemBERTa · GEM" },
+    { id: "unimol",    icon: "🌐", name: "SM-UniMol-GEM", desc: "SMILES · UniMol · GEM" },
+  ];
 
   return (
     <div className="train-page">
@@ -401,25 +421,34 @@ export default function TrainPage() {
             <div className="train-section-head het">
               <span className="train-section-title">Heterogeneity</span>
             </div>
-            <div className="model-grid het-grid">
-              <div className={"model-card gray" + (!usePipeline ? " selected gray" : "")}
-                onClick={() => status !== "running" && setUsePipeline(false)}>
-                {!usePipeline && <span className="model-check gray">✓</span>}
-                <span className="model-icon">🚫</span>
-                <span className="model-name">No Pipeline</span>
-                <span className="model-desc">Raw concentration features</span>
-              </div>
-              <div className={"model-card gray" + (usePipeline ? " selected gray" : "")}
-                onClick={() => status !== "running" && setUsePipeline(true)}>
-                {usePipeline && <span className="model-check gray">✓</span>}
-                <span className="model-icon">🧬</span>
-                <span className="model-name">SMILES · RDKit · GEM</span>
-                <span className="model-desc">Molecular embedding pipeline</span>
-              </div>
+            <div className="model-grid" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
+              {PIPELINE_OPTIONS.map(opt => {
+                const d = pipelineDims[opt.id];
+                return (
+                  <div key={opt.id}
+                    className={"model-card gray" + (pipelineType === opt.id ? " selected gray" : "")}
+                    onClick={() => status !== "running" && setPipelineType(opt.id)}>
+                    {pipelineType === opt.id && <span className="model-check gray">✓</span>}
+                    <span className="model-icon">{opt.icon}</span>
+                    <span className="model-name">{opt.name}</span>
+                    <span className="model-desc">{opt.desc}</span>
+                    {opt.id !== "none" && (
+                      <div style={{ fontSize: 9, color: "#999", marginTop: 6, paddingTop: 6, borderTop: "0.5px solid #eee", width: "100%", textAlign: "center" }}>
+                        {d ? (
+                          <>
+                            <div style={{ fontWeight: 700, color: "#555" }}>{d.total} dim</div>
+                            <div>emb {d.embedding} · phys {d.metal_physchem} · conc {d.log_conc} · gem {d.gem}</div>
+                          </>
+                        ) : "로딩중…"}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-            {usePipeline && (
-              <div className="st-note" style={{ marginTop: "0.5rem" }}>
-                ⚠ 데이터가 적을 경우 성능 저하 가능 (차원 230)
+            {pipelineType !== "none" && (
+              <div className="st-note" style={{ marginTop: "0.75rem" }}>
+                ⚠ 데이터가 적을 경우 성능 저하 가능 (임베딩에 따라 차원 상이)
               </div>
             )}
           </div>
@@ -512,9 +541,7 @@ export default function TrainPage() {
             {/* Heterogeneity block */}
             <div className="sum-block het-block">
               <span className="sum-block-label">Heterogeneity</span>
-              <span className="sum-het-val">
-                {usePipeline ? "🧬 SMILES · RDKit · GEM" : "🚫 No Pipeline"}
-              </span>
+              <span className="sum-het-val">{PIPELINE_LABEL[pipelineType]}</span>
             </div>
 
             {/* Input dim block */}
@@ -522,8 +549,8 @@ export default function TrainPage() {
               <span className="sum-block-label">Input dimension</span>
               <span className="sum-dim-val">{inputDim}</span>
               <span className="sum-dim-sub">
-                {usePipeline
-                  ? `${selectedFeats.length + selectedTsFeats.length} features → 230 (embedded)`
+                {pipelineType !== "none"
+                  ? `${selectedFeats.length + selectedTsFeats.length} features → embedded (${PIPELINE_LABEL[pipelineType]})`
                   : `${selectedFeats.length + selectedTsFeats.length} features × raw value`}
               </span>
             </div>
