@@ -114,6 +114,16 @@ class MLPModel:
         scaler  : fitted StandardScaler (saved for inference)
                   ※ pipeline on이면 230차원 기준으로 fit된 scaler가 들어옴
         """
+        # ※ [DEBUG] 파이프라인별로 실제 X가 다른 데이터인지 확인하기 위한 임시 로그.
+        #   std()가 파이프라인 종류(rdkit/chemberta/unimol)에 따라 달라지는지로
+        #   판별함 — sum()은 StandardScaler 특성상 항상 0에 가까워 판별에 부적합.
+        #   원인 확인 끝나면 이 5줄은 제거할 것.
+        # print(f"[DEBUG] X_train.shape = {X_train.shape}")
+        # print(f"[DEBUG] X_train[0][:5] = {X_train[0][:5]}")
+        # print(f"[DEBUG] X_train[0][100:105] = {X_train[0][100:105]}")
+        # print(f"[DEBUG] X_train.sum() = {X_train.sum():.6f}")
+        # print(f"[DEBUG] X_train.std() = {X_train.std():.6f}")
+        
         self.scaler = scaler
         self.x_cols = x_cols
 

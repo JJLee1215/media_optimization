@@ -1,4 +1,6 @@
 """
+나머지(StaticTimeGNN 버그, ⚠ 표시, timeseries 파이프라인 확장)는 규모가 있는 작업이라 다음 세션으로 넘겨도 무방
+
 model.py
 StaticTimeGNN — full model assembly
 

@@ -86,23 +86,34 @@ class GaussianProcessModel:
         )
 
     def train(self, X_train, y_train, x_cols=None, scaler=None):
-        """
-        X_train : (n_train, 9) or (n_train, 230)  already scaled
-                  9   = raw concentration features (pipeline off)
-                  230 = media representation vector (pipeline on)
-        y_train : (n_train,)
-        x_cols  : feature names (for importance plot)
-                  ※ pipeline on이어도 x_cols는 원본 9개 컴포넌트 이름 그대로 유지됨
-                    (get_static_data가 x_cols를 raw 컬럼명으로 반환하기 때문)
-        scaler  : fitted StandardScaler (saved for inference)
-                  ※ pipeline on이면 230차원 기준으로 fit된 scaler가 들어옴
-        """
-        self.scaler = scaler
-        self.x_cols = x_cols
-        print(f"[GaussianProcess] Training...  n_train={len(X_train)}  n_features={X_train.shape[1]}")
-        self.model.fit(X_train, y_train)
-        print(f"[GaussianProcess] Training complete.")
-        print(f"[GaussianProcess] Learned kernel: {self.model.kernel_}")
+            """
+            X_train : (n_train, 9) or (n_train, 230)  already scaled
+                    9   = raw concentration features (pipeline off)
+                    230 = media representation vector (pipeline on)
+            y_train : (n_train,)
+            x_cols  : feature names (for importance plot)
+                    ※ pipeline on이어도 x_cols는 원본 9개 컴포넌트 이름 그대로 유지됨
+                        (get_static_data가 x_cols를 raw 컬럼명으로 반환하기 때문)
+            scaler  : fitted StandardScaler (saved for inference)
+                    ※ pipeline on이면 230차원 기준으로 fit된 scaler가 들어옴
+
+            ※ [DEBUG] 파이프라인별로 실제 X가 다른 데이터인지 확인하기 위한 임시 로그.
+            std()가 파이프라인 종류(rdkit/chemberta/unimol)에 따라 달라지는지로
+            판별함 — sum()은 StandardScaler 특성상 항상 0에 가까워 판별에 부적합.
+            원인 확인 끝나면 이 5줄은 제거할 것.
+            """
+            # print(f"[DEBUG] X_train.shape = {X_train.shape}")
+            # print(f"[DEBUG] X_train[0][:5] = {X_train[0][:5]}")
+            # print(f"[DEBUG] X_train[0][100:105] = {X_train[0][100:105]}")
+            # print(f"[DEBUG] X_train.sum() = {X_train.sum():.6f}")
+            # print(f"[DEBUG] X_train.std() = {X_train.std():.6f}")
+
+            self.scaler = scaler
+            self.x_cols = x_cols
+            print(f"[GaussianProcess] Training...  n_train={len(X_train)}  n_features={X_train.shape[1]}")
+            self.model.fit(X_train, y_train)
+            print(f"[GaussianProcess] Training complete.")
+            print(f"[GaussianProcess] Learned kernel: {self.model.kernel_}")
 
     def predict(self, X):
         """

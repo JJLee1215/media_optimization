@@ -210,17 +210,18 @@ export default function TrainPage() {
     sse.onerror = () => { stopIndicators(); setStreaming(false); setStatus("error"); sse.close(); };
 
     for (const modelId of selected) {
-      await axios.post(`${API}/train`, {
-        model            : modelId,
-        use_pipeline     : pipelineType !== "none",
-        static_file      : staticFile || null,
-        ts_file          : tsFile     || null,
-        selected_cols    : selectedFeats.length   > 0 ? selectedFeats   : null,
-        selected_ts_cols : selectedTsFeats.length > 0 ? selectedTsFeats : null,
-        embedding_model  : pipelineType !== "none" ? pipelineType : null,
-        other_blocks     : pipelineType !== "none" ? ["log_conc", "metal_physchem", "gem"] : null,
-      });
-    }
+          await axios.post(`${API}/train`, {
+            model            : modelId,
+            use_pipeline     : pipelineType !== "none",
+            static_file      : staticFile || null,
+            ts_file          : tsFile     || null,
+            selected_cols    : selectedFeats.length   > 0 ? selectedFeats   : null,
+            selected_ts_cols : selectedTsFeats.length > 0 ? selectedTsFeats : null,
+            embedding_model  : pipelineType !== "none" ? pipelineType : null,
+            other_blocks     : pipelineType !== "none" ? ["log_conc", "metal_physchem", "gem"] : null,
+            notation         : pipelineType !== "none" ? "smiles" : null,
+          });
+        }
   };
 
   const hasStGnn  = selected.includes("static_time_gnn");

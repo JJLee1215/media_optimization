@@ -85,6 +85,12 @@ class XGBoostModel:
         scaler  : fitted StandardScaler (saved for inference)
                   ※ pipeline on이면 230차원 기준으로 fit된 scaler가 들어옴
         """
+        # print(f"[DEBUG] X_train.shape = {X_train.shape}")
+        # print(f"[DEBUG] X_train[0][:5] = {X_train[0][:5]}")
+        # print(f"[DEBUG] X_train[0][100:105] = {X_train[0][100:105]}")
+        # print(f"[DEBUG] X_train.sum() = {X_train.sum():.6f}")
+        # print(f"[DEBUG] X_train.std() = {X_train.std():.6f}")
+
         self.scaler = scaler
         self.x_cols = x_cols
         print(f"[XGBoost] Training...  n_train={len(X_train)}  n_features={X_train.shape[1]}")
