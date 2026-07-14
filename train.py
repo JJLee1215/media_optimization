@@ -5,6 +5,8 @@ Model training entry point (CLI)
 Usage:
   python train.py --model static
   python train.py --model gaussian_process --pipeline --embedding_model chemberta
+  python train.py --model gaussian_process --pipeline --embedding_model rdkit --pooling_method multi_stat --use_pca --pca_dim 30
+  python train.py --model xgboost --pipeline --embedding_model rdkit --other_blocks gem
   python train.py --model static --static_file my_batch.csv
   python train.py --model time --ts_file my_timeseries.csv
   python train.py --model all --static_file batch.csv --ts_file ts.csv
@@ -39,12 +41,13 @@ from training.result_schema import build_result_schema
 
 def train_model(model_name, use_pipeline=False, static_file=None, ts_file=None,
                  selected_cols=None, selected_ts_cols=None,
-                 embedding_model=None, other_blocks=None, notation=None):
+                 embedding_model=None, other_blocks=None, notation=None,
+                 pooling_method="mean", use_pca=False, pca_dim=30):
     config.make_dirs()
     print(f"\n{'='*55}")
     print(f"  Training    : {model_name.upper()}")
     print(f"  Pipeline    : {'ON' if use_pipeline else 'OFF'}"
-          + (f"  (embedding_model={embedding_model})" if use_pipeline else ""))
+          + (f"  (embedding_model={embedding_model}, pooling={pooling_method}, pca={use_pca}, other_blocks={other_blocks})" if use_pipeline else ""))
     print(f"  Static file : {static_file or config.DATA_STATIC}")
     print(f"  TS file     : {ts_file or config.DATA_TIMESERIES}")
     if selected_cols:
@@ -55,17 +58,20 @@ def train_model(model_name, use_pipeline=False, static_file=None, ts_file=None,
 
     if model_name in STATIC_MODELS:
         result = train_static(model_name, use_pipeline=use_pipeline, static_file=static_file,
-                               selected_cols=selected_cols, embedding_model=embedding_model)
+                               selected_cols=selected_cols, embedding_model=embedding_model,
+                               pooling_method=pooling_method, use_pca=use_pca, pca_dim=pca_dim,
+                               other_blocks=other_blocks)
     elif model_name in TIME_MODELS:
         result = train_time(model_name, ts_file=ts_file, selected_cols=selected_ts_cols)
     elif model_name == "static_time_gnn":
         result = train_static_time(use_pipeline=use_pipeline, static_file=static_file, ts_file=ts_file,
                                     selected_cols=selected_cols, selected_ts_cols=selected_ts_cols,
-                                    embedding_model=embedding_model)
+                                    embedding_model=embedding_model,
+                                    pooling_method=pooling_method, use_pca=use_pca, pca_dim=pca_dim,
+                                    other_blocks=other_blocks)
     else:
         raise ValueError(f"Unknown model: {model_name}")
 
-    # ── training/runners.py가 임시로 실어온 내부용 값 꺼내기 ──
     actual_static_cols     = result.pop("_actual_static_cols", None)
     actual_ts_cols          = result.pop("_actual_ts_cols", None)
     actual_embedding_model  = result.pop("_actual_embedding_model", None)
@@ -74,7 +80,6 @@ def train_model(model_name, use_pipeline=False, static_file=None, ts_file=None,
 
     hyperparams = model_obj.get_config() if (model_obj and hasattr(model_obj, "get_config")) else {}
 
-    # ── basic_info ──
     result["model"]      = model_name
     result["trained_at"] = datetime.datetime.now().isoformat(timespec="seconds")
     result["data_file"]  = {
@@ -82,7 +87,6 @@ def train_model(model_name, use_pipeline=False, static_file=None, ts_file=None,
         "timeseries": ts_file or config.DATA_TIMESERIES.name,
     }
 
-    # ── selected_front_end / selected_back_end / matches ──
     selected_front_end, selected_back_end, matches = build_result_schema(
         use_pipeline            = use_pipeline,
         selected_cols           = selected_cols,
@@ -95,6 +99,8 @@ def train_model(model_name, use_pipeline=False, static_file=None, ts_file=None,
         actual_embedding_model  = actual_embedding_model,
         actual_pipeline_dim     = actual_pipeline_dim,
         hyperparams             = hyperparams,
+        pooling_method           = pooling_method,
+        use_pca                  = use_pca,
     )
     result["selected_front_end"] = selected_front_end
     result["selected_back_end"]  = selected_back_end
@@ -110,7 +116,8 @@ def train_model(model_name, use_pipeline=False, static_file=None, ts_file=None,
 
 def train_group(group: str, use_pipeline=False, static_file=None, ts_file=None,
                  selected_cols=None, selected_ts_cols=None,
-                 embedding_model=None, other_blocks=None, notation=None):
+                 embedding_model=None, other_blocks=None, notation=None,
+                 pooling_method="mean", use_pca=False, pca_dim=30):
     models  = MODEL_GROUPS[group]
     results = {}
 
@@ -126,6 +133,9 @@ def train_group(group: str, use_pipeline=False, static_file=None, ts_file=None,
                 embedding_model=embedding_model,
                 other_blocks=other_blocks,
                 notation=notation,
+                pooling_method=pooling_method,
+                use_pca=use_pca,
+                pca_dim=pca_dim,
             )
         except Exception as e:
             print(f"\n[{name}] Error: {e}")
@@ -152,9 +162,16 @@ if __name__ == "__main__":
         choices=["rdkit", "chemberta", "unimol"],
         help="Heterogeneity pipeline 임베딩 종류 (--pipeline과 함께 사용)")
     parser.add_argument("--other_blocks", type=str, default=None,
-        help="쉼표로 구분된 부가 블록 (log_conc,metal_physchem,gem)")
+        help="쉼표로 구분된 부가 블록 (log_conc,metal_physchem,gem). 없으면 전체 포함")
     parser.add_argument("--notation", type=str, default="smiles",
         help="분자 표기법 (현재는 smiles만 지원)")
+    parser.add_argument("--pooling_method", type=str, default="mean",
+        choices=["mean", "multi_stat"],
+        help="Pooling 방식 (mean 또는 mean+weighted+max+count)")
+    parser.add_argument("--use_pca", action="store_true", default=False,
+        help="PCA로 최종 차원 압축 여부")
+    parser.add_argument("--pca_dim", type=int, default=30,
+        help="use_pca=True일 때 목표 차원")
     args = parser.parse_args()
 
     sel_cols    = args.selected_cols.split(",")    if args.selected_cols    else None
@@ -170,6 +187,9 @@ if __name__ == "__main__":
         embedding_model  = args.embedding_model,
         other_blocks     = other_blks,
         notation         = args.notation,
+        pooling_method    = args.pooling_method,
+        use_pca           = args.use_pca,
+        pca_dim           = args.pca_dim,
     )
 
     if args.model in MODEL_GROUPS:

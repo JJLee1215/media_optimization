@@ -41,20 +41,24 @@ def push_log(line: str):
 class TrainRequest(BaseModel):
     model             : str  = "static"
     use_pipeline      : bool = False
-    static_file       : str  = None
-    ts_file           : str  = None
+    static_file       : str  | None = None
+    ts_file           : str  | None = None
     selected_cols     : list[str] | None = None
     selected_ts_cols  : list[str] | None = None
     embedding_model   : str  | None = None
     other_blocks      : list[str] | None = None
     notation          : str  | None = None
+    pooling_method    : str  | None = None
+    use_pca           : bool | None = None
+    pca_dim           : int  | None = None
 
 
 def run_training(model_group: str, use_pipeline: bool = False,
                  static_file: str = None, ts_file: str = None,
                  selected_cols: list = None, selected_ts_cols: list = None,
                  embedding_model: str = None, other_blocks: list = None,
-                 notation: str = None):
+                 notation: str = None, pooling_method: str = None,
+                 use_pca: bool = None, pca_dim: int = None):
     global log_buffer
     log_buffer = []
 
@@ -73,6 +77,8 @@ def run_training(model_group: str, use_pipeline: bool = False,
     if use_pipeline:
         push_log(f"  Embedding model      : {embedding_model}")
         push_log(f"  Other blocks         : {other_blocks}")
+        push_log(f"  Pooling method       : {pooling_method}")
+        push_log(f"  PCA                  : {'ON (dim=' + str(pca_dim) + ')' if use_pca else 'OFF'}")
 
     try:
         cmd = ["python", "train.py", "--model", model_group]
@@ -92,6 +98,12 @@ def run_training(model_group: str, use_pipeline: bool = False,
             cmd += ["--other_blocks", ",".join(other_blocks)]
         if notation:
             cmd += ["--notation", notation]
+        if pooling_method:
+            cmd += ["--pooling_method", pooling_method]
+        if use_pca:
+            cmd.append("--use_pca")
+        if pca_dim:
+            cmd += ["--pca_dim", str(pca_dim)]
 
         proc = subprocess.Popen(
             cmd,
@@ -148,6 +160,9 @@ def train(req: TrainRequest, bg: BackgroundTasks):
         req.embedding_model,
         req.other_blocks,
         req.notation,
+        req.pooling_method,
+        req.use_pca,
+        req.pca_dim,
     )
     return {"message": f"Training started: {req.model}"}
 
@@ -242,6 +257,7 @@ def get_pipeline_dims():
     """
     각 파이프라인의 차원 구성을 heterogeneity._registry에서 계산해서 반환.
     프론트 Heterogeneity 카드 하단 상세 표시 + 우측 요약(total)에 재사용.
+    rdkit/chemberta × mean/multi_stat 4개 조합 반환 (unimol은 아래에서 조건부 추가 가능).
     """
     from heterogeneity._registry import get_all_pipeline_dims
     return get_all_pipeline_dims()

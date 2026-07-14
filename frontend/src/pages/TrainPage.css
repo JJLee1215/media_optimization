@@ -851,3 +851,13 @@
 .feat-sub-section.lit.static .feat-sub-count.in-use { background: #1D9E75; }
 .feat-sub-section.lit.ts .feat-sub-count.in-use     { background: #534AB7; }
 .feat-sub-section.lit.st .feat-sub-count.in-use     { background: #1a1f2e; }
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}

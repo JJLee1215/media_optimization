@@ -7,6 +7,12 @@ Methods:
   evaluate() compute metrics + save plots
   save()     persist to disk
   load()     restore from disk
+
+  ※ save()가 heterogeneity pipeline 관련 정보를 저장하지 않는 이유:
+    train_static_time()이 pipeline_obj를 직접 관리하고 있고, GNN 모델
+    자체는 지금 predict.py 연동이 아직 없어서 (StaticTimeGNN은 예측
+    페이지에서 아직 지원 안 됨) 우선순위가 낮음. 필요 시 다른 모델과
+    동일한 패턴(use_pipeline/embedding_model/pipeline_obj)으로 확장 가능.
 """
 
 import numpy as np
@@ -52,9 +58,6 @@ class StaticTimeGNNModel:
         ).to(self.device)
         self.history = {"train": [], "val": [], "titer": [], "viab": [], "graph": []}
 
-        # ── 학습 정보 기록용: 생성자 파라미터 저장 ──
-        # get_config()에서 모델 구조 정보(d_static, d_dynamic, N)를
-        # result.json의 meta.hyperparams에 함께 기록하기 위해 보관.
         self.d_static  = d_static
         self.d_dynamic = d_dynamic
         self.N         = N
@@ -113,7 +116,6 @@ class StaticTimeGNNModel:
         )
         print(f"[StaticTimeGNN] Training complete.  {time.time()-t0:.1f}s  best val: {best_val:.4f}@{best_epoch}")
 
-        # ── 학습 정보 기록용: 학습 후에만 확정되는 값 저장 ──
         self.best_epoch = best_epoch
         self.best_val   = round(float(best_val), 4)
 
@@ -174,7 +176,6 @@ class StaticTimeGNNModel:
         print(f"[StaticTimeGNN] Saved: {path}")
 
     def _plot_adjacency(self, A_mean):
-        var_names = ["var_" + str(i) for i in range(A_mean.shape[0])]
         fig, ax = plt.subplots(figsize=(10, 8))
         sns.heatmap(A_mean, ax=ax, cmap="YlOrRd", vmin=0, vmax=1,
                     annot=(A_mean.shape[0] <= 15), fmt=".2f", linewidths=0.5,
@@ -206,11 +207,6 @@ class StaticTimeGNNModel:
         학습 정보 기록용 하이퍼파라미터 리포트.
         train.py의 train_model()이 result.json의 meta.hyperparams에
         이 값을 그대로 저장함.
-
-        ※ d_static/d_dynamic/N은 생성자에서 받은 모델 구조 정보(정적으로 확정).
-          lr/epoch/lambda_viab/lambda_graph/huber_delta는 config.py에서
-          미리 고정된 값. best_epoch/best_val은 train()이 끝난 뒤에만
-          알 수 있는 값이라 getattr로 방어적으로 조회함.
         """
         return {
             "epoch"        : config.GNN_EPOCHS,

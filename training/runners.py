@@ -10,6 +10,17 @@ train.py에서 이 함수들을 호출해서 학습을 실행함. "무엇을 어
     _actual_static_cols, _actual_ts_cols
     _actual_embedding_model, _actual_pipeline_dim
     _model_obj
+
+※ Heterogeneity pipeline 사용 시(use_pipeline=True), 저장 대상은 scaler가
+  아니라 pipeline 객체 전체(scaler+PCA 포함)임. model.save()에 pipeline_obj를
+  함께 넘겨서, 예측 시 이미 학습된 scaler/PCA 규칙을 그대로 복원할 수 있게 함.
+
+※ other_blocks : ["log_conc", "metal_physchem", "gem"] 중 concat에 포함할
+  블록 목록. None이면 셋 다 포함(기본값). get_static_data()/get_pipeline()에
+  그대로 전달되어, 실제로 어떤 블록이 concat되는지를 결정함.
+
+※ Split 원칙: notation~pooling은 배치 단위 독립 연산이라 순서 무관하지만,
+  scaler/PCA는 "여러 배치의 분산"을 보는 연산이라 반드시 train만 fit해야 함.
 """
 
 import torch
@@ -18,6 +29,7 @@ from pathlib import Path
 
 import config
 from data_preprocess import get_static_data, get_timeseries_data
+from heterogeneity._registry import get_pipeline, get_pipeline_dim_info
 
 STATIC_MODELS      = ["gaussian_process", "random_forest", "xgboost", "mlp"]
 TIME_MODELS        = ["rnn", "lstm", "transformer", "tcn"]
@@ -62,10 +74,14 @@ def get_model(model_name):
 
 
 def train_static(model_name, use_pipeline=False, static_file=None, selected_cols=None,
-                  embedding_model=None):
+                  embedding_model=None, pooling_method="mean", use_pca=False, pca_dim=30,
+                  other_blocks=None):
     """
-    embedding_model : "rdkit" | "chemberta" | "unimol" | None
-                      get_static_data()에 그대로 전달됨.
+    embedding_model, pooling_method, use_pca, pca_dim, other_blocks
+        : get_static_data()에 그대로 전달됨.
+
+    ※ use_pipeline=True일 때, model.save()에는 scaler 대신 pipeline 객체
+      전체(scaler+PCA 포함)를 넘겨서, 예측 시 동일한 규칙을 재현하게 함.
     """
     X_train, X_test, y_train, y_test, x_cols, scaler, actual_embedding_model, pipeline_dim = \
         get_static_data(
@@ -73,7 +89,18 @@ def train_static(model_name, use_pipeline=False, static_file=None, selected_cols
             static_file=static_file,
             selected_cols=selected_cols,
             embedding_model=embedding_model,
+            pooling_method=pooling_method,
+            use_pca=use_pca,
+            pca_dim=pca_dim,
+            other_blocks=other_blocks,
         )
+
+    pipeline_obj = None
+    if use_pipeline:
+        # get_static_data()가 이미 이 조합으로 fit해둔 파이프라인을 캐시에서 그대로 꺼내옴
+        pipeline_obj = get_pipeline(actual_embedding_model, pooling_method=pooling_method,
+                                     use_pca=use_pca, pca_dim=pca_dim, other_blocks=other_blocks)
+
     model = get_model(model_name)
     model.train(X_train, y_train, x_cols=x_cols, scaler=scaler)
     result = model.evaluate(X_test, y_test)
@@ -81,7 +108,8 @@ def train_static(model_name, use_pipeline=False, static_file=None, selected_cols
         model.feature_importance()
     if hasattr(model, "cross_validate"):
         model.cross_validate(X_train, y_train)
-    model.save(use_pipeline=use_pipeline)
+    model.save(use_pipeline=use_pipeline, embedding_model=actual_embedding_model,
+               pipeline_obj=pipeline_obj)
 
     result["_actual_static_cols"]      = x_cols
     result["_actual_embedding_model"]  = actual_embedding_model
@@ -106,15 +134,20 @@ def train_time(model_name, ts_file=None, selected_cols=None):
 
 
 def train_static_time(use_pipeline=False, static_file=None, ts_file=None,
-                       selected_cols=None, selected_ts_cols=None, embedding_model=None):
+                       selected_cols=None, selected_ts_cols=None, embedding_model=None,
+                       pooling_method="mean", use_pca=False, pca_dim=30, other_blocks=None):
     """
     StaticTimeGNN — uses both static and timeseries data.
+
     ※ timeseries feature selection은 인접행렬(A0) 인덱스 하드코딩 때문에
       아직 안전하게 지원되지 않음 (별도 이슈, 미해결).
+
+    ※ Split 순서: static 배치 인덱스를 먼저 나누고 각각
+      fit_transform(train)/transform(val)을 호출.
     """
-    from torch.utils.data import Dataset, DataLoader, random_split
+    from torch.utils.data import Dataset, DataLoader, Subset
+    from sklearn.model_selection import train_test_split
     from Models.StaticTimeGNN import StaticTimeGNNModel
-    from heterogeneity._registry import get_pipeline, get_pipeline_dim_info
     import pandas as pd
 
     static_path = config.DATA_DIR / static_file if static_file else config.DATA_STATIC
@@ -135,19 +168,6 @@ def train_static_time(use_pipeline=False, static_file=None, ts_file=None,
 
     m_static_np = df_static[static_cols].values.astype(np.float32)
 
-    actual_embedding_model = None
-    pipeline_dim            = None
-    if use_pipeline:
-        pipeline = get_pipeline(embedding_model)
-        actual_embedding_model = embedding_model or "rdkit"
-        m_static_np = pipeline.transform(m_static_np, static_cols)
-        pipeline_dim = get_pipeline_dim_info(actual_embedding_model, pipeline)
-        print(f"[train_static_time] pipeline applied: ({len(static_cols)},) → {m_static_np.shape}  (embedding_model={actual_embedding_model})")
-
-    m_static = torch.tensor(m_static_np, dtype=torch.float32)
-    y_titer  = torch.tensor(df_static["titer_final"].values, dtype=torch.float32)
-    y_viab   = torch.tensor(df_static["viab_final"].values,  dtype=torch.float32)
-
     batch_col  = "Batch_ID"
     time_col   = "Time (day)"
     target_col = "Titer (g/L)"
@@ -162,7 +182,45 @@ def train_static_time(use_pipeline=False, static_file=None, ts_file=None,
         X_list.append(grp[feat_cols].values)
 
     T = min(len(x) for x in X_list)
-    X_dynamic = torch.tensor(np.array([x[:T] for x in X_list], dtype=np.float32))
+    X_dynamic_np = np.array([x[:T] for x in X_list], dtype=np.float32)
+
+    n_samples = len(m_static_np)
+    train_idx, val_idx = train_test_split(
+        np.arange(n_samples), test_size=(1 - config.TRAIN_RATIO),
+        random_state=config.RANDOM_SEED,
+    )
+
+    # ── static feature: 파이프라인 적용 시 train만 fit, val은 transform ──
+    actual_embedding_model = None
+    pipeline_dim            = None
+    pipeline_obj             = None
+    if use_pipeline:
+        pipeline = get_pipeline(embedding_model, pooling_method=pooling_method,
+                                  use_pca=use_pca, pca_dim=pca_dim, other_blocks=other_blocks)
+        actual_embedding_model = embedding_model or "rdkit"
+        pipeline_obj = pipeline
+
+        m_static_train = pipeline.fit_transform(m_static_np[train_idx], static_cols)
+        m_static_val    = pipeline.transform(m_static_np[val_idx], static_cols)
+
+        pipeline_dim = get_pipeline_dim_info(actual_embedding_model, pooling_method=pooling_method,
+                                               use_pca=use_pca, pca_dim=pca_dim,
+                                               other_blocks=other_blocks, pipeline=pipeline)
+        print(f"[train_static_time] pipeline applied: static({len(static_cols)}) → "
+              f"train {m_static_train.shape}, val {m_static_val.shape}"
+              f"  (embedding_model={actual_embedding_model}, pooling={pooling_method}, pca={use_pca}, other_blocks={other_blocks})")
+    else:
+        m_static_train = m_static_np[train_idx]
+        m_static_val    = m_static_np[val_idx]
+
+    m_static_full = np.zeros((n_samples, m_static_train.shape[1]), dtype=np.float32)
+    m_static_full[train_idx] = m_static_train
+    m_static_full[val_idx]   = m_static_val
+
+    m_static = torch.tensor(m_static_full, dtype=torch.float32)
+    X_dynamic = torch.tensor(X_dynamic_np, dtype=torch.float32)
+    y_titer  = torch.tensor(df_static["titer_final"].values, dtype=torch.float32)
+    y_viab   = torch.tensor(df_static["viab_final"].values,  dtype=torch.float32)
 
     class GNNDataset(Dataset):
         def __init__(self, m, X, yt, yv):
@@ -171,12 +229,9 @@ def train_static_time(use_pipeline=False, static_file=None, ts_file=None,
         def __getitem__(self, i): return self.m[i], self.X[i], self.yt[i], self.yv[i]
 
     dataset = GNNDataset(m_static, X_dynamic, y_titer, y_viab)
-    n_train = int(len(dataset) * config.TRAIN_RATIO)
-    n_val   = len(dataset) - n_train
-    train_set, val_set = random_split(
-        dataset, [n_train, n_val],
-        generator=torch.Generator().manual_seed(config.RANDOM_SEED)
-    )
+    train_set = Subset(dataset, train_idx)
+    val_set   = Subset(dataset, val_idx)
+
     train_loader = DataLoader(train_set, batch_size=config.GNN_BATCH_SIZE, shuffle=True)
     val_loader   = DataLoader(val_set,   batch_size=config.GNN_BATCH_SIZE)
 
